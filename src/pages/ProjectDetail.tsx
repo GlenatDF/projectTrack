@@ -3,14 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Edit2, Trash2, RefreshCw, FolderOpen, Code2,
   AlertCircle, CheckCircle2, PauseCircle, GitBranch, Link2,
-  Loader2, Terminal, Bot, X,
+  Loader2, Terminal, Bot, Sparkles, X, Copy,
 } from 'lucide-react';
 import type { Project, ProjectScan } from '../lib/types';
 import {
   getProject, getProjectScans, scanProject, updateProject,
   updateProjectStatus, deleteProject, openFolder, openInVscode,
   relinkRepoPath, validateRepoPath,
-  openInTerminal, openInIterm, runClaudeHere, runGitStatus, isItermAvailable,
+  openInTerminal, openInIterm, runClaudeHere, runClaudeBootstrap,
+  copyBootstrapPrompt,
+  runGitStatus, isItermAvailable,
 } from '../lib/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { PhaseBadge } from '../components/PhaseBadge';
@@ -32,6 +34,7 @@ export default function ProjectDetail() {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // Inline notes editing
   const [editingNotes, setEditingNotes] = useState(false);
@@ -52,6 +55,18 @@ export default function ProjectDetail() {
   const [itermAvailable, setItermAvailable] = useState(false);
   const [gitStatusOutput, setGitStatusOutput] = useState<string | null>(null);
   const [gitStatusLoading, setGitStatusLoading] = useState(false);
+
+  // Claude Setup inline editing
+  const [editingClaudeSetup, setEditingClaudeSetup] = useState(false);
+  const [claudeSetupDraft, setClaudeSetupDraft] = useState({
+    startup_command: '',
+    preferred_terminal: '',
+    claude_prompt_mode: 'append' as 'append' | 'replace',
+    claude_priority_files: '',
+    claude_startup_prompt: '',
+    session_handoff_notes: '',
+  });
+  const [savingClaudeSetup, setSavingClaudeSetup] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -146,6 +161,53 @@ export default function ProjectDetail() {
     if (!project?.local_repo_path) return;
     try { await runClaudeHere(project.local_repo_path); }
     catch (e) { setActionError(String(e)); }
+  }
+
+  async function handleClaudeBootstrap() {
+    if (!project) return;
+    try {
+      const msg = await runClaudeBootstrap(projectId);
+      setActionNotice(msg);
+    } catch (e) {
+      setActionError(String(e));
+    }
+  }
+
+  async function handleCopyBootstrap() {
+    if (!project) return;
+    try {
+      await copyBootstrapPrompt(projectId);
+      setActionNotice('Bootstrap prompt copied to clipboard (⌘V to paste)');
+    } catch (e) {
+      setActionError(String(e));
+    }
+  }
+
+  function handleEnterClaudeEdit() {
+    if (!project) return;
+    setClaudeSetupDraft({
+      startup_command: project.startup_command,
+      preferred_terminal: project.preferred_terminal,
+      claude_prompt_mode: project.claude_prompt_mode === 'replace' ? 'replace' : 'append',
+      claude_priority_files: project.claude_priority_files,
+      claude_startup_prompt: project.claude_startup_prompt,
+      session_handoff_notes: project.session_handoff_notes,
+    });
+    setEditingClaudeSetup(true);
+  }
+
+  async function handleSaveClaudeSetup() {
+    if (!project) return;
+    try {
+      setSavingClaudeSetup(true);
+      const updated = await updateProject(projectId, { ...project, ...claudeSetupDraft });
+      setProject(updated);
+      setEditingClaudeSetup(false);
+    } catch (e) {
+      setActionError(String(e));
+    } finally {
+      setSavingClaudeSetup(false);
+    }
   }
 
   async function handleGitStatus() {
@@ -262,6 +324,15 @@ export default function ProjectDetail() {
         </div>
       )}
 
+      {/* Action notice (e.g. bootstrap clipboard confirmation) */}
+      {actionNotice && (
+        <div className="mb-4 p-3 bg-violet-500/10 border border-violet-500/30 rounded-lg text-violet-300 text-sm flex items-start gap-2">
+          <Sparkles size={14} className="mt-0.5 shrink-0" />
+          <span>{actionNotice}</span>
+          <button onClick={() => setActionNotice(null)} className="ml-auto text-violet-400 hover:text-violet-200">✕</button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left column */}
         <div className="lg:col-span-2 space-y-4">
@@ -372,6 +443,10 @@ export default function ProjectDetail() {
                   )}
                   <ActionBtn icon={Bot} label="Run Claude here" onClick={handleRunClaude}
                     cls="text-violet-400 hover:bg-violet-500/10" />
+                  <ActionBtn icon={Sparkles} label="Claude + Bootstrap" onClick={handleClaudeBootstrap}
+                    cls="text-violet-300 hover:bg-violet-500/10" />
+                  <ActionBtn icon={Copy} label="Copy Bootstrap Prompt" onClick={handleCopyBootstrap}
+                    cls="text-violet-400/70 hover:bg-violet-500/10" />
                   <button
                     onClick={handleGitStatus}
                     disabled={gitStatusLoading}
@@ -475,6 +550,136 @@ export default function ProjectDetail() {
               <p className={`text-sm leading-relaxed whitespace-pre-wrap select-text ${project.notes ? 'text-slate-300' : 'text-slate-500 italic'}`}>
                 {project.notes || 'No notes yet. Click Edit to add some.'}
               </p>
+            )}
+          </InfoCard>
+
+          {/* Claude Setup */}
+          <InfoCard
+            title="Claude Setup"
+            action={
+              !editingClaudeSetup ? (
+                <button onClick={handleEnterClaudeEdit}
+                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+                  Edit
+                </button>
+              ) : null
+            }
+          >
+            {editingClaudeSetup ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Startup command</label>
+                  <input
+                    type="text"
+                    value={claudeSetupDraft.startup_command}
+                    onChange={(e) => setClaudeSetupDraft((d) => ({ ...d, startup_command: e.target.value }))}
+                    placeholder="claude"
+                    className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500/50 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Preferred terminal</label>
+                  <select
+                    value={claudeSetupDraft.preferred_terminal}
+                    onChange={(e) => setClaudeSetupDraft((d) => ({ ...d, preferred_terminal: e.target.value }))}
+                    className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-indigo-500/50 cursor-pointer"
+                  >
+                    <option value="">Auto (iTerm2 if available)</option>
+                    <option value="iterm">iTerm2</option>
+                    <option value="terminal">Terminal.app</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Prompt mode</label>
+                  <select
+                    value={claudeSetupDraft.claude_prompt_mode}
+                    onChange={(e) => setClaudeSetupDraft((d) => ({ ...d, claude_prompt_mode: e.target.value as 'append' | 'replace' }))}
+                    className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-indigo-500/50 cursor-pointer"
+                  >
+                    <option value="append">Append to global prompt</option>
+                    <option value="replace">Replace global prompt</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Priority files to read first</label>
+                  <textarea
+                    value={claudeSetupDraft.claude_priority_files}
+                    onChange={(e) => setClaudeSetupDraft((d) => ({ ...d, claude_priority_files: e.target.value }))}
+                    rows={3}
+                    placeholder="e.g. src/lib/types.ts, CLAUDE.md"
+                    className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500/50 resize-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Custom startup prompt</label>
+                  <textarea
+                    value={claudeSetupDraft.claude_startup_prompt}
+                    onChange={(e) => setClaudeSetupDraft((d) => ({ ...d, claude_startup_prompt: e.target.value }))}
+                    rows={4}
+                    placeholder="Project-specific instructions for Claude…"
+                    className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500/50 resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Session handoff notes</label>
+                  <textarea
+                    value={claudeSetupDraft.session_handoff_notes}
+                    onChange={(e) => setClaudeSetupDraft((d) => ({ ...d, session_handoff_notes: e.target.value }))}
+                    rows={3}
+                    placeholder="Notes to include at end of every bootstrap prompt…"
+                    className="w-full bg-base border border-border rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-500/50 resize-none"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleSaveClaudeSetup}
+                    disabled={savingClaudeSetup}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {savingClaudeSetup && <Loader2 size={11} className="animate-spin" />}
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingClaudeSetup(false)}
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 bg-hover rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <InfoRow label="Command" value={project.startup_command || 'claude'} valueClass="text-slate-300 font-mono" />
+                <InfoRow
+                  label="Terminal"
+                  value={project.preferred_terminal === 'iterm' ? 'iTerm2' : project.preferred_terminal === 'terminal' ? 'Terminal.app' : 'Auto'}
+                />
+                <InfoRow
+                  label="Prompt mode"
+                  value={project.claude_prompt_mode === 'replace' ? 'Replace global' : 'Append to global'}
+                />
+                {project.claude_priority_files && (
+                  <div className="pt-1">
+                    <p className="text-xs text-slate-500 mb-0.5">Priority files</p>
+                    <p className="text-xs text-slate-400 font-mono whitespace-pre-wrap break-all leading-relaxed">{project.claude_priority_files}</p>
+                  </div>
+                )}
+                {project.claude_startup_prompt && (
+                  <div className="pt-1">
+                    <p className="text-xs text-slate-500 mb-0.5">Custom prompt</p>
+                    <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-3">{project.claude_startup_prompt}</p>
+                  </div>
+                )}
+                {project.session_handoff_notes && (
+                  <div className="pt-1">
+                    <p className="text-xs text-slate-500 mb-0.5">Handoff notes</p>
+                    <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-3">{project.session_handoff_notes}</p>
+                  </div>
+                )}
+                {!project.claude_startup_prompt && !project.claude_priority_files && !project.session_handoff_notes && (
+                  <p className="text-xs text-slate-500 italic">Using global defaults. Click Edit to customize.</p>
+                )}
+              </div>
             )}
           </InfoCard>
         </div>

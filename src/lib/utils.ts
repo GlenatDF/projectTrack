@@ -2,7 +2,12 @@
 export function relativeTime(dateStr: string | null | undefined): string {
   if (!dateStr) return 'never';
 
-  const date = new Date(dateStr);
+  // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" with no timezone
+  // indicator — WebKit treats that as local time. Normalise to ISO 8601 UTC.
+  const normalised = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateStr)
+    ? dateStr.replace(' ', 'T') + 'Z'
+    : dateStr;
+  const date = new Date(normalised);
   if (isNaN(date.getTime())) return 'unknown';
 
   const now = Date.now();

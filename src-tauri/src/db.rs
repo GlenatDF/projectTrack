@@ -24,6 +24,18 @@ pub struct Project {
     pub created_at: String,
     pub updated_at: String,
     pub last_scanned_at: Option<String>,
+    #[serde(default)]
+    pub claude_startup_prompt: String,
+    #[serde(default)]
+    pub claude_prompt_mode: String,
+    #[serde(default)]
+    pub claude_priority_files: String,
+    #[serde(default)]
+    pub session_handoff_notes: String,
+    #[serde(default)]
+    pub startup_command: String,
+    #[serde(default)]
+    pub preferred_terminal: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -58,6 +70,12 @@ pub struct CreateProject {
     pub next_task: String,
     pub blocker: String,
     pub notes: String,
+    pub claude_startup_prompt: String,
+    pub claude_prompt_mode: String,
+    pub claude_priority_files: String,
+    pub session_handoff_notes: String,
+    pub startup_command: String,
+    pub preferred_terminal: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +91,12 @@ pub struct UpdateProject {
     pub next_task: String,
     pub blocker: String,
     pub notes: String,
+    pub claude_startup_prompt: String,
+    pub claude_prompt_mode: String,
+    pub claude_priority_files: String,
+    pub session_handoff_notes: String,
+    pub startup_command: String,
+    pub preferred_terminal: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,15 +129,15 @@ CREATE TABLE IF NOT EXISTS projects (
     next_task       TEXT    NOT NULL DEFAULT '',
     blocker         TEXT    NOT NULL DEFAULT '',
     notes           TEXT    NOT NULL DEFAULT '',
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     last_scanned_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS project_scans (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id            INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    scanned_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    scanned_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     current_branch        TEXT,
     is_dirty              INTEGER NOT NULL DEFAULT 0,
     changed_files_count   INTEGER NOT NULL DEFAULT 0,
@@ -139,7 +163,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
 pub fn init_database(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch(SCHEMA)?;
+    run_migrations(&conn);
     Ok(conn)
+}
+
+/// Non-destructive ALTER TABLE migrations. Each is wrapped in `let _ = ...`
+/// so duplicate-column errors (SQLITE_ERROR) are silently ignored.
+fn run_migrations(conn: &Connection) {
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN claude_startup_prompt TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN claude_prompt_mode TEXT NOT NULL DEFAULT 'append'", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN claude_priority_files TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN session_handoff_notes TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN startup_command TEXT NOT NULL DEFAULT 'claude'", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN preferred_terminal TEXT NOT NULL DEFAULT ''", []);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -161,6 +197,12 @@ fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         created_at: row.get(12)?,
         updated_at: row.get(13)?,
         last_scanned_at: row.get(14)?,
+        claude_startup_prompt: row.get(15)?,
+        claude_prompt_mode: row.get(16)?,
+        claude_priority_files: row.get(17)?,
+        session_handoff_notes: row.get(18)?,
+        startup_command: row.get(19)?,
+        preferred_terminal: row.get(20)?,
     })
 }
 
@@ -186,7 +228,9 @@ fn row_to_scan(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectScan> {
 
 const PROJECT_COLS: &str = "
     id, name, description, local_repo_path, status, phase, priority, ai_tool,
-    current_task, next_task, blocker, notes, created_at, updated_at, last_scanned_at
+    current_task, next_task, blocker, notes, created_at, updated_at, last_scanned_at,
+    claude_startup_prompt, claude_prompt_mode, claude_priority_files,
+    session_handoff_notes, startup_command, preferred_terminal
 ";
 
 const SCAN_COLS: &str = "
@@ -214,11 +258,15 @@ pub fn insert_project(conn: &Connection, p: CreateProject) -> Result<Project> {
     conn.execute(
         "INSERT INTO projects
             (name, description, local_repo_path, status, phase, priority, ai_tool,
-             current_task, next_task, blocker, notes)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+             current_task, next_task, blocker, notes,
+             claude_startup_prompt, claude_prompt_mode, claude_priority_files,
+             session_handoff_notes, startup_command, preferred_terminal)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
         params![
             p.name, p.description, p.local_repo_path, p.status, p.phase,
-            p.priority, p.ai_tool, p.current_task, p.next_task, p.blocker, p.notes
+            p.priority, p.ai_tool, p.current_task, p.next_task, p.blocker, p.notes,
+            p.claude_startup_prompt, p.claude_prompt_mode, p.claude_priority_files,
+            p.session_handoff_notes, p.startup_command, p.preferred_terminal
         ],
     )?;
     fetch_project(conn, conn.last_insert_rowid())
@@ -229,12 +277,17 @@ pub fn update_project_record(conn: &Connection, id: i64, p: UpdateProject) -> Re
         "UPDATE projects SET
             name=?1, description=?2, local_repo_path=?3, status=?4, phase=?5,
             priority=?6, ai_tool=?7, current_task=?8, next_task=?9, blocker=?10,
-            notes=?11, updated_at=datetime('now')
-         WHERE id=?12",
+            notes=?11,
+            claude_startup_prompt=?12, claude_prompt_mode=?13, claude_priority_files=?14,
+            session_handoff_notes=?15, startup_command=?16, preferred_terminal=?17,
+            updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+         WHERE id=?18",
         params![
             p.name, p.description, p.local_repo_path, p.status, p.phase,
-            p.priority, p.ai_tool, p.current_task, p.next_task, p.blocker,
-            p.notes, id
+            p.priority, p.ai_tool, p.current_task, p.next_task, p.blocker, p.notes,
+            p.claude_startup_prompt, p.claude_prompt_mode, p.claude_priority_files,
+            p.session_handoff_notes, p.startup_command, p.preferred_terminal,
+            id
         ],
     )?;
     fetch_project(conn, id)
@@ -242,7 +295,7 @@ pub fn update_project_record(conn: &Connection, id: i64, p: UpdateProject) -> Re
 
 pub fn update_status(conn: &Connection, id: i64, status: &str) -> Result<Project> {
     conn.execute(
-        "UPDATE projects SET status=?1, updated_at=datetime('now') WHERE id=?2",
+        "UPDATE projects SET status=?1, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id=?2",
         params![status, id],
     )?;
     fetch_project(conn, id)
@@ -251,7 +304,7 @@ pub fn update_status(conn: &Connection, id: i64, status: &str) -> Result<Project
 /// Update only the local_repo_path — used for the "relink" action.
 pub fn update_repo_path(conn: &Connection, id: i64, path: &str) -> Result<Project> {
     conn.execute(
-        "UPDATE projects SET local_repo_path=?1, updated_at=datetime('now') WHERE id=?2",
+        "UPDATE projects SET local_repo_path=?1, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id=?2",
         params![path, id],
     )?;
     fetch_project(conn, id)
@@ -296,7 +349,7 @@ pub fn insert_scan(conn: &Connection, project_id: i64, git: &GitStatus) -> Resul
 
 pub fn update_last_scanned(conn: &Connection, project_id: i64) -> Result<()> {
     conn.execute(
-        "UPDATE projects SET last_scanned_at=datetime('now'), updated_at=datetime('now') WHERE id=?1",
+        "UPDATE projects SET last_scanned_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id=?1",
         params![project_id],
     )?;
     Ok(())
@@ -330,7 +383,7 @@ pub fn fetch_dashboard_stats(conn: &Connection) -> Result<DashboardStats> {
         "SELECT COUNT(*) FROM projects
          WHERE status != 'done'
            AND local_repo_path != ''
-           AND (last_scanned_at IS NULL OR last_scanned_at < datetime('now','-7 days'))",
+           AND (last_scanned_at IS NULL OR last_scanned_at < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-7 days'))",
     )?;
 
     // Dirty repos: latest scan for each project where is_dirty = 1
@@ -395,12 +448,16 @@ pub fn import_projects(conn: &Connection, projects: Vec<Project>) -> Result<usiz
         conn.execute(
             "INSERT INTO projects
                 (name, description, local_repo_path, status, phase, priority, ai_tool,
-                 current_task, next_task, blocker, notes, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                 current_task, next_task, blocker, notes, created_at,
+                 claude_startup_prompt, claude_prompt_mode, claude_priority_files,
+                 session_handoff_notes, startup_command, preferred_terminal)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 p.name, p.description, p.local_repo_path, p.status, p.phase,
                 p.priority, p.ai_tool, p.current_task, p.next_task, p.blocker,
-                p.notes, p.created_at
+                p.notes, p.created_at,
+                p.claude_startup_prompt, p.claude_prompt_mode, p.claude_priority_files,
+                p.session_handoff_notes, p.startup_command, p.preferred_terminal
             ],
         )?;
         count += 1;

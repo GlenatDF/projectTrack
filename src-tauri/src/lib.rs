@@ -51,6 +51,8 @@ pub fn run() {
             commands::open_in_terminal,
             commands::open_in_iterm,
             commands::run_claude_here,
+            commands::run_claude_bootstrap,
+            commands::copy_bootstrap_prompt,
             commands::run_git_status,
             commands::is_iterm_available,
             commands::export_projects,

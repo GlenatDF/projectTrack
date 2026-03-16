@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use tauri::State;
 
@@ -292,6 +293,12 @@ pub fn bulk_import_repos(
                 next_task: String::new(),
                 blocker: String::new(),
                 notes: String::new(),
+                claude_startup_prompt: String::new(),
+                claude_prompt_mode: "append".to_string(),
+                claude_priority_files: String::new(),
+                session_handoff_notes: String::new(),
+                startup_command: "claude".to_string(),
+                preferred_terminal: String::new(),
             },
         )
         .map_err(|e| e.to_string())?;
@@ -391,6 +398,148 @@ pub fn run_claude_here(path: String) -> Result<(), String> {
     );
     Command::new("osascript").arg("-e").arg(&script).spawn().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Global bootstrap prompt used as the base for all projects.
+const GLOBAL_BOOTSTRAP_PROMPT: &str = "\
+You are helping me continue work on this project. Before touching any code, please:
+
+1. Inspect the repo structure — look at the directory tree and key config files
+2. Check git status and review recent commits (git log --oneline -10)
+3. Read any important docs: README, CLAUDE.md, TODO, NOTES, or similar files
+4. Summarize the current project state concisely
+5. Identify the most likely next steps based on what you see
+
+Do NOT modify any files until I explicitly ask you to. Just orient yourself and wait for my instruction.";
+
+/// Compose the full bootstrap prompt for a project from its settings.
+fn compose_bootstrap_prompt(project: &db::Project) -> String {
+    let mode = project.claude_prompt_mode.as_str();
+    let mut prompt = if mode == "replace" {
+        if project.claude_startup_prompt.is_empty() {
+            GLOBAL_BOOTSTRAP_PROMPT.to_string()
+        } else {
+            project.claude_startup_prompt.clone()
+        }
+    } else {
+        // append (default)
+        let mut base = GLOBAL_BOOTSTRAP_PROMPT.to_string();
+        if !project.claude_startup_prompt.is_empty() {
+            base.push_str("\n\n---\nProject-specific instructions:\n");
+            base.push_str(&project.claude_startup_prompt);
+        }
+        base
+    };
+
+    if !project.claude_priority_files.is_empty() {
+        prompt.push_str("\n\nPriority files to read first:\n");
+        prompt.push_str(&project.claude_priority_files);
+    }
+
+    if !project.session_handoff_notes.is_empty() {
+        prompt.push_str("\n\nSession handoff notes:\n");
+        prompt.push_str(&project.session_handoff_notes);
+    }
+
+    prompt
+}
+
+fn copy_to_clipboard_pbcopy(text: &str) -> bool {
+    (|| -> std::io::Result<()> {
+        let mut child = Command::new("pbcopy").stdin(Stdio::piped()).spawn()?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        child.wait()?;
+        Ok(())
+    })()
+    .is_ok()
+}
+
+fn notice(clipboard_ok: bool) -> String {
+    if clipboard_ok {
+        "Bootstrap prompt copied to clipboard — paste it in Claude (⌘V)".to_string()
+    } else {
+        "Claude opened — clipboard copy failed, type the prompt manually".to_string()
+    }
+}
+
+fn open_terminal_with_command(path: &str, cmd: &str, preferred_terminal: &str) -> Result<(), String> {
+    let arg = posix_shell_arg_for_applescript(path);
+    let use_iterm = match preferred_terminal {
+        "iterm" => Path::new("/Applications/iTerm.app").exists(),
+        "terminal" => false,
+        _ => Path::new("/Applications/iTerm.app").exists(), // auto
+    };
+
+    if use_iterm {
+        let script = format!(
+            "tell application \"iTerm\"\nactivate\ncreate window with default profile\n\
+             tell current session of current window\nwrite text \"cd '{arg}' && {cmd}\"\n\
+             end tell\nend tell"
+        );
+        if Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+    }
+
+    let script = format!(
+        "tell application \"Terminal\"\nactivate\ndo script \"cd '{arg}' && {cmd}\"\nend tell"
+    );
+    Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Open Claude in the best available terminal with the working directory set to
+/// the project's repo path, and copy the composed bootstrap prompt to the
+/// macOS clipboard. Returns a confirmation message to display in the UI.
+#[tauri::command]
+pub fn run_claude_bootstrap(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
+
+    if project.local_repo_path.is_empty() {
+        return Err("No repository path configured for this project.".to_string());
+    }
+    let p = Path::new(&project.local_repo_path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", project.local_repo_path));
+    }
+
+    let prompt = compose_bootstrap_prompt(&project);
+    let clipboard_ok = copy_to_clipboard_pbcopy(&prompt);
+
+    let cmd = if project.startup_command.is_empty() { "claude" } else { &project.startup_command };
+    open_terminal_with_command(&project.local_repo_path, cmd, &project.preferred_terminal)?;
+
+    Ok(notice(clipboard_ok))
+}
+
+/// Compose and copy the bootstrap prompt for a project to the clipboard
+/// without opening a terminal. Returns the prompt text.
+#[tauri::command]
+pub fn copy_bootstrap_prompt(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
+    let prompt = compose_bootstrap_prompt(&project);
+    copy_to_clipboard_pbcopy(&prompt);
+    Ok(prompt)
 }
 
 /// Run `git status --short -b` in a directory and return the raw output.

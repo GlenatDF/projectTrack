@@ -64,6 +64,14 @@ export const openInIterm = (path: string): Promise<void> =>
 export const runClaudeHere = (path: string): Promise<void> =>
   invoke('run_claude_here', { path });
 
+/** Open Claude in a terminal at the project's repo path and copy the bootstrap prompt to clipboard. */
+export const runClaudeBootstrap = (projectId: number): Promise<string> =>
+  invoke('run_claude_bootstrap', { projectId });
+
+/** Compose and copy the bootstrap prompt for a project to clipboard. Returns the prompt text. */
+export const copyBootstrapPrompt = (projectId: number): Promise<string> =>
+  invoke('copy_bootstrap_prompt', { projectId });
+
 export const runGitStatus = (path: string): Promise<string> =>
   invoke('run_git_status', { path });
 

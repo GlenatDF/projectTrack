@@ -31,6 +31,12 @@ export interface Project {
   created_at: string;
   updated_at: string;
   last_scanned_at: string | null;
+  claude_startup_prompt: string;
+  claude_prompt_mode: 'append' | 'replace';
+  claude_priority_files: string;
+  session_handoff_notes: string;
+  startup_command: string;
+  preferred_terminal: string;
 }
 
 export interface ProjectScan {
@@ -84,6 +90,12 @@ export interface ProjectFormData {
   next_task: string;
   blocker: string;
   notes: string;
+  claude_startup_prompt: string;
+  claude_prompt_mode: 'append' | 'replace';
+  claude_priority_files: string;
+  session_handoff_notes: string;
+  startup_command: string;
+  preferred_terminal: string;
 }
 
 // ── Display helpers ───────────────────────────────────────────────────────────

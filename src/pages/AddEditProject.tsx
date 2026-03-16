@@ -22,6 +22,12 @@ const EMPTY_FORM: ProjectFormData = {
   next_task: '',
   blocker: '',
   notes: '',
+  claude_startup_prompt: '',
+  claude_prompt_mode: 'append',
+  claude_priority_files: '',
+  session_handoff_notes: '',
+  startup_command: 'claude',
+  preferred_terminal: '',
 };
 
 export default function AddEditProject() {
@@ -55,6 +61,12 @@ export default function AddEditProject() {
           next_task: p.next_task,
           blocker: p.blocker,
           notes: p.notes,
+          claude_startup_prompt: p.claude_startup_prompt,
+          claude_prompt_mode: p.claude_prompt_mode === 'replace' ? 'replace' : 'append',
+          claude_priority_files: p.claude_priority_files,
+          session_handoff_notes: p.session_handoff_notes,
+          startup_command: p.startup_command,
+          preferred_terminal: p.preferred_terminal,
         });
       })
       .catch((e) => setError(String(e)))
