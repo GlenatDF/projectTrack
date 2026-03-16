@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #0d0f14;
+  color: #e2e8f0;
+  overflow: hidden; /* Tauri window handles scrolling in the content area */
+  user-select: none; /* Prevent text selection on UI chrome */
+}
+
+/* Allow text selection inside inputs, textareas, and note content */
+input, textarea, [data-selectable] {
+  user-select: text;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2d3148;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3d4168;
+}
+
+/* ── Tailwind colour aliases (used in tailwind.config.js extend.colors) ────── */
+
+.bg-base    { background-color: #0d0f14; }
+.bg-surface { background-color: #161921; }
+.bg-card    { background-color: #1e2130; }
+.bg-hover   { background-color: #252837; }
+.border-border { border-color: #2d3148; }
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Select styling override (native select on macOS) ──────────────────────── */
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px !important;
+}
+
+select option {
+  background-color: #1e2130;
+  color: #e2e8f0;
+}
