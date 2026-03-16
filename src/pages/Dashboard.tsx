@@ -10,7 +10,7 @@ import { StatCard } from '../components/StatCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { PhaseBadge } from '../components/PhaseBadge';
 import { HealthDot } from '../components/HealthDot';
-import { relativeTime, loadPref, savePref } from '../lib/utils';
+import { projectTimestampLabel, loadPref, savePref } from '../lib/utils';
 import { computeHealth } from '../lib/health';
 
 const STATUS_OPTIONS = ['all', 'active', 'blocked', 'paused', 'done'] as const;
@@ -208,7 +208,7 @@ export default function Dashboard() {
                   </span>
                 )}
                 <span className="text-xs text-slate-500 shrink-0 ml-auto">
-                  {relativeTime(p.updated_at)}
+                  {projectTimestampLabel(p)}
                 </span>
               </div>
             ))}

@@ -6,7 +6,7 @@ import { StatusBadge } from './StatusBadge';
 import { PhaseBadge } from './PhaseBadge';
 import { PriorityDot } from './PriorityDot';
 import { HealthDot } from './HealthDot';
-import { relativeTime, shortHash } from '../lib/utils';
+import { relativeTime, shortHash, projectTimestampLabel } from '../lib/utils';
 import { computeHealth } from '../lib/health';
 
 interface Props {
@@ -170,9 +170,9 @@ export function ProjectCard({ project, latestScan, onScan, onStatusChange }: Pro
         </div>
       )}
 
-      {/* Last updated */}
+      {/* Timestamp */}
       <div className="flex items-center justify-end mt-2 text-xs text-slate-500">
-        <span>{relativeTime(project.updated_at)}</span>
+        {projectTimestampLabel(project, activeScan)}
       </div>
     </div>
   );

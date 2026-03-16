@@ -21,6 +21,26 @@ export function relativeTime(dateStr: string | null | undefined): string {
   return `${Math.floor(diffDay / 365)}y ago`;
 }
 
+/**
+ * Returns a labelled timestamp string for a project row/card, using the most
+ * meaningful available field:
+ *   1. scan.last_commit_date → "Commit X ago"
+ *   2. project.last_scanned_at → "Scanned X ago"
+ *   3. project.updated_at     → "Updated X ago"
+ */
+export function projectTimestampLabel(
+  project: { updated_at: string; last_scanned_at: string | null },
+  scan?: { last_commit_date: string | null } | null,
+): string {
+  if (scan?.last_commit_date) {
+    return `Commit ${relativeTime(scan.last_commit_date)}`;
+  }
+  if (project.last_scanned_at) {
+    return `Scanned ${relativeTime(project.last_scanned_at)}`;
+  }
+  return `Updated ${relativeTime(project.updated_at)}`;
+}
+
 /** Shorten a commit hash to 7 characters. */
 export function shortHash(hash: string | null | undefined): string {
   if (!hash) return '';
