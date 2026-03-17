@@ -318,16 +318,25 @@ export default function Manual() {
             </Card>
             <Card className="mb-3">
               <SubHeading>Generating a plan</SubHeading>
-              <p className="text-sm text-slate-400 mb-2">
+              <p className="text-sm text-slate-400 mb-3">
                 On the <strong className="text-slate-300">Plan tab</strong>, click{' '}
-                <strong className="text-slate-300">Generate Plan</strong>. The modal shows a prompt
-                assembled from your project details and methodology blocks.
+                <strong className="text-slate-300">Generate Plan</strong>. The modal assembles a
+                prompt from your project details and methodology blocks, then gives you two options:
               </p>
-              <p className="text-sm text-slate-400 mb-2">
-                Copy the prompt, paste it into Claude (or another LLM), and paste the response back
-                into the <strong className="text-slate-300">Import Plan Response</strong> field.
-                The parser extracts phases, tasks, risks, and assumptions into structured records.
-              </p>
+              <div className="space-y-0 mb-3">
+                <FeatureRow
+                  icon={Bot}
+                  label="Run with Claude CLI"
+                  desc="Pipes the prompt directly to `claude --print` and imports the response automatically — no copy-paste required. Takes ~15–30 seconds. Requires Claude Code CLI to be installed."
+                  iconColor="text-violet-400"
+                />
+                <FeatureRow
+                  icon={ClipboardList}
+                  label="Paste manually"
+                  desc="Copy the prompt, send it to any LLM, then paste the response back in. Use this if Claude CLI isn't available or you want to use a different model."
+                  iconColor="text-slate-400"
+                />
+              </div>
               <p className="text-sm text-slate-400">
                 Re-importing a plan only replaces phases/tasks you haven't manually edited
                 (<strong className="text-slate-300">user_modified</strong> flag is respected).
