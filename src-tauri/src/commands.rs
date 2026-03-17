@@ -5,7 +5,9 @@ use std::process::{Command, Stdio};
 use tauri::State;
 
 use crate::db::{
-    self, CreateProject, DashboardStats, Project, ProjectScan, UpdateProject,
+    self, AiPlanRun, AssembledPrompt, CreateProject, DashboardStats, ImportPlanResult,
+    MethodologyBlock, Project, ProjectDocument, ProjectPhase, ProjectPlan, ProjectTask,
+    ProjectScan, UpdateProject,
 };
 use crate::git;
 use crate::AppState;
@@ -585,4 +587,151 @@ pub fn import_projects(json: String, state: State<'_, AppState>) -> Result<usize
         serde_json::from_str(&json).map_err(|e| format!("Invalid JSON: {e}"))?;
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     db::import_projects(&conn, projects).map_err(|e| e.to_string())
+}
+
+// ── Planning: Documents ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_project_documents(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<ProjectDocument>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::fetch_project_documents(&conn, project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_project_document(
+    project_id: i64,
+    doc_type: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<ProjectDocument, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_project_document(&conn, project_id, &doc_type, &content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_document_status(
+    project_id: i64,
+    doc_type: String,
+    status: String,
+    state: State<'_, AppState>,
+) -> Result<ProjectDocument, String> {
+    let valid = ["draft", "reviewed", "final"];
+    if !valid.contains(&status.as_str()) {
+        return Err(format!("Invalid document status: {status}"));
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_document_status(&conn, project_id, &doc_type, &status)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn regenerate_scaffold(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<ProjectDocument>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::regenerate_scaffold(&conn, project_id).map_err(|e| e.to_string())
+}
+
+// ── Planning: Methodology blocks ──────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_methodology_blocks(
+    state: State<'_, AppState>,
+) -> Result<Vec<MethodologyBlock>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::fetch_methodology_blocks(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_methodology_block(
+    slug: String,
+    content: String,
+    is_active: bool,
+    state: State<'_, AppState>,
+) -> Result<MethodologyBlock, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_methodology_block(&conn, &slug, &content, is_active)
+        .map_err(|e| e.to_string())
+}
+
+// ── Planning: Prompt assembly & plan import ───────────────────────────────────
+
+/// Assemble the planning prompt for a project, copy it to the clipboard,
+/// and return the prompt text + any warnings.
+#[tauri::command]
+pub fn assemble_planning_prompt(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<AssembledPrompt, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let assembled = db::assemble_prompt(&conn, project_id).map_err(|e| e.to_string())?;
+    copy_to_clipboard_pbcopy(&assembled.prompt);
+    Ok(assembled)
+}
+
+/// Import an AI-generated plan response into the database.
+/// Takes the prompt that was sent (for logging) and the raw AI response.
+#[tauri::command]
+pub fn import_plan_response(
+    project_id: i64,
+    prompt_sent: String,
+    raw_response: String,
+    state: State<'_, AppState>,
+) -> Result<ImportPlanResult, String> {
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::import_plan(&mut conn, project_id, &prompt_sent, &raw_response)
+        .map_err(|e| e.to_string())
+}
+
+// ── Planning: Plan read / status updates ──────────────────────────────────────
+
+#[tauri::command]
+pub fn get_project_plan(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<ProjectPlan, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::fetch_project_plan(&conn, project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_task_status(
+    task_id: i64,
+    status: String,
+    state: State<'_, AppState>,
+) -> Result<ProjectTask, String> {
+    let valid = ["pending", "in_progress", "done", "skipped"];
+    if !valid.contains(&status.as_str()) {
+        return Err(format!("Invalid task status: {status}"));
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_task_status_record(&conn, task_id, &status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_phase_status(
+    phase_id: i64,
+    status: String,
+    state: State<'_, AppState>,
+) -> Result<ProjectPhase, String> {
+    let valid = ["pending", "in_progress", "done", "skipped"];
+    if !valid.contains(&status.as_str()) {
+        return Err(format!("Invalid phase status: {status}"));
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_phase_status_record(&conn, phase_id, &status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_ai_plan_runs(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<AiPlanRun>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::fetch_ai_plan_runs(&conn, project_id).map_err(|e| e.to_string())
 }

@@ -1,10 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AiPlanRun,
+  AssembledPrompt,
   DashboardStats,
   DiscoveredRepo,
+  ImportPlanResult,
+  MethodologyBlock,
   Project,
+  ProjectDocument,
   ProjectFormData,
+  ProjectPhase,
+  ProjectPlan,
   ProjectScan,
+  ProjectTask,
 } from './types';
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -98,3 +106,71 @@ export const bulkImportRepos = (
 
 export const chooseFolderMac = (): Promise<string | null> =>
   invoke('choose_folder_mac');
+
+// ── Planning: Documents ────────────────────────────────────────────────────────
+
+export const getProjectDocuments = (projectId: number): Promise<ProjectDocument[]> =>
+  invoke('get_project_documents', { projectId });
+
+export const updateProjectDocument = (
+  projectId: number,
+  docType: string,
+  content: string,
+): Promise<ProjectDocument> =>
+  invoke('update_project_document', { projectId, docType, content });
+
+export const updateDocumentStatus = (
+  projectId: number,
+  docType: string,
+  status: string,
+): Promise<ProjectDocument> =>
+  invoke('update_document_status', { projectId, docType, status });
+
+export const regenerateScaffold = (projectId: number): Promise<ProjectDocument[]> =>
+  invoke('regenerate_scaffold', { projectId });
+
+// ── Planning: Methodology ──────────────────────────────────────────────────────
+
+export const getMethodologyBlocks = (): Promise<MethodologyBlock[]> =>
+  invoke('get_methodology_blocks');
+
+export const updateMethodologyBlock = (
+  slug: string,
+  content: string,
+  isActive: boolean,
+): Promise<MethodologyBlock> =>
+  invoke('update_methodology_block', { slug, content, isActive });
+
+// ── Planning: Prompt assembly & plan import ────────────────────────────────────
+
+/** Assemble the planning prompt, copy to clipboard, return prompt + warnings. */
+export const assemblePlanningPrompt = (projectId: number): Promise<AssembledPrompt> =>
+  invoke('assemble_planning_prompt', { projectId });
+
+/** Import an AI plan response. Returns counts of imported/preserved records. */
+export const importPlanResponse = (
+  projectId: number,
+  promptSent: string,
+  rawResponse: string,
+): Promise<ImportPlanResult> =>
+  invoke('import_plan_response', { projectId, promptSent, rawResponse });
+
+// ── Planning: Plan read / status updates ──────────────────────────────────────
+
+export const getProjectPlan = (projectId: number): Promise<ProjectPlan> =>
+  invoke('get_project_plan', { projectId });
+
+export const updateTaskStatus = (
+  taskId: number,
+  status: string,
+): Promise<ProjectTask> =>
+  invoke('update_task_status', { taskId, status });
+
+export const updatePhaseStatus = (
+  phaseId: number,
+  status: string,
+): Promise<ProjectPhase> =>
+  invoke('update_phase_status', { phaseId, status });
+
+export const getAiPlanRuns = (projectId: number): Promise<AiPlanRun[]> =>
+  invoke('get_ai_plan_runs', { projectId });

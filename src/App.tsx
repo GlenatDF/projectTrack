@@ -6,6 +6,7 @@ import ProjectDetail from './pages/ProjectDetail';
 import AddEditProject from './pages/AddEditProject';
 import Settings from './pages/Settings';
 import Discover from './pages/Discover';
+import Manual from './pages/Manual';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/projects/:id/edit" element={<AddEditProject />} />
           <Route path="/discover" element={<Discover />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/manual" element={<Manual />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, FolderSearch, Settings, Loader2 } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, FolderSearch, Settings, Loader2, BookOpen } from 'lucide-react';
 import type { AutoScanState } from './Layout';
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/projects', label: 'Projects', icon: FolderKanban, end: false },
   { to: '/discover', label: 'Discover', icon: FolderSearch, end: true },
   { to: '/settings', label: 'Settings', icon: Settings, end: true },
+  { to: '/manual', label: 'Manual', icon: BookOpen, end: true },
 ];
 
 export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {

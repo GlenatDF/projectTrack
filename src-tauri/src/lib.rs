@@ -60,6 +60,19 @@ pub fn run() {
             commands::discover_repos,
             commands::bulk_import_repos,
             commands::choose_folder_mac,
+            // Planning
+            commands::get_project_documents,
+            commands::update_project_document,
+            commands::update_document_status,
+            commands::regenerate_scaffold,
+            commands::get_methodology_blocks,
+            commands::update_methodology_block,
+            commands::assemble_planning_prompt,
+            commands::import_plan_response,
+            commands::get_project_plan,
+            commands::update_task_status,
+            commands::update_phase_status,
+            commands::get_ai_plan_runs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

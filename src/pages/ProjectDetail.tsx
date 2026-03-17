@@ -22,6 +22,10 @@ import { GitBadge } from '../components/GitBadge';
 import { AI_TOOL_LABELS, PHASE_LABELS } from '../lib/types';
 import { relativeTime, shortHash } from '../lib/utils';
 import { computeHealth } from '../lib/health';
+import { PlanningDocs } from '../components/planning/PlanningDocs';
+import { GeneratePlanModal } from '../components/planning/GeneratePlanModal';
+import { PhasesView } from '../components/planning/PhasesView';
+import { RisksView } from '../components/planning/RisksView';
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -50,6 +54,22 @@ export default function ProjectDetail() {
   const [relinkPath, setRelinkPath] = useState('');
   const [relinkValidating, setRelinkValidating] = useState(false);
   const [relinkValid, setRelinkValid] = useState<boolean | null>(null);
+
+  // Planning tabs
+  const [activeTab, setActiveTab] = useState<'overview' | 'docs' | 'plan' | 'risks'>('overview');
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['overview']));
+  const [planVersion, setPlanVersion] = useState(0);
+  const [showGeneratePlan, setShowGeneratePlan] = useState(false);
+
+  function handleSwitchTab(tab: typeof activeTab) {
+    setActiveTab(tab);
+    setVisitedTabs(prev => new Set([...prev, tab]));
+  }
+
+  function handlePlanImported() {
+    setPlanVersion(v => v + 1);
+    handleSwitchTab('plan');
+  }
 
   // Terminal integration
   const [itermAvailable, setItermAvailable] = useState(false);
@@ -286,6 +306,12 @@ export default function ProjectDetail() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
+            onClick={() => setShowGeneratePlan(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-lg hover:bg-violet-500/20 transition-colors"
+          >
+            <Sparkles size={13} /> Plan
+          </button>
+          <button
             onClick={() => navigate(`/projects/${projectId}/edit`)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-300 bg-surface border border-border rounded-lg hover:bg-hover transition-colors"
           >
@@ -315,6 +341,25 @@ export default function ProjectDetail() {
         </span>
       </div>
 
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 mb-5 border-b border-[#2a2d3a]">
+        {(['overview', 'docs', 'plan', 'risks'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => handleSwitchTab(tab)}
+            className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
+              activeTab === tab
+                ? 'border-violet-500 text-violet-300'
+                : 'border-transparent text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {tab === 'overview' ? 'Overview' :
+             tab === 'docs' ? 'Docs' :
+             tab === 'plan' ? 'Tasks' : 'Risks'}
+          </button>
+        ))}
+      </div>
+
       {/* Action error */}
       {actionError && (
         <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm flex items-start gap-2">
@@ -333,6 +378,31 @@ export default function ProjectDetail() {
         </div>
       )}
 
+      {/* Planning tabs — mount on first visit, then hidden CSS to preserve state */}
+      <div className={activeTab === 'docs' ? 'block' : 'hidden'}>
+        {visitedTabs.has('docs') && (
+          <PlanningDocs
+            projectId={projectId}
+            onNavigateToPlan={() => handleSwitchTab('plan')}
+          />
+        )}
+      </div>
+      <div className={activeTab === 'plan' ? 'block' : 'hidden'}>
+        {visitedTabs.has('plan') && (
+          <PhasesView
+            projectId={projectId}
+            planVersion={planVersion}
+            onGeneratePlan={() => setShowGeneratePlan(true)}
+          />
+        )}
+      </div>
+      <div className={activeTab === 'risks' ? 'block' : 'hidden'}>
+        {visitedTabs.has('risks') && (
+          <RisksView projectId={projectId} planVersion={planVersion} />
+        )}
+      </div>
+
+      <div className={activeTab === 'overview' ? 'block' : 'hidden'}>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left column */}
         <div className="lg:col-span-2 space-y-4">
@@ -684,6 +754,17 @@ export default function ProjectDetail() {
           </InfoCard>
         </div>
       </div>
+
+      </div>{/* end overview tab */}
+
+      {/* Generate Plan Modal */}
+      {showGeneratePlan && (
+        <GeneratePlanModal
+          projectId={projectId}
+          onClose={() => setShowGeneratePlan(false)}
+          onImported={handlePlanImported}
+        />
+      )}
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && project && (
