@@ -147,6 +147,10 @@ export const updateMethodologyBlock = (
 export const assemblePlanningPrompt = (projectId: number): Promise<AssembledPrompt> =>
   invoke('assemble_planning_prompt', { projectId });
 
+/** Pipe the planning prompt to `claude --print` and return the raw response. */
+export const runPlanWithClaudeCli = (projectId: number): Promise<string> =>
+  invoke('run_plan_with_claude_cli', { projectId });
+
 /** Import an AI plan response. Returns counts of imported/preserved records. */
 export const importPlanResponse = (
   projectId: number,

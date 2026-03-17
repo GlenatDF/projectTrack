@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Bot,
   CheckCircle2,
   ClipboardCopy,
   Loader2,
   Sparkles,
   X,
 } from 'lucide-react';
-import { assemblePlanningPrompt, getProjectPlan, importPlanResponse } from '../../lib/api';
+import { assemblePlanningPrompt, getProjectPlan, importPlanResponse, runPlanWithClaudeCli } from '../../lib/api';
 import type { AssembledPrompt, ImportPlanResult } from '../../lib/types';
 
 type Step =
   | 'assembling'
   | 'prompt'
   | 'confirm'
+  | 'running'
   | 'pasting'
   | 'importing'
   | 'done'
@@ -57,6 +59,19 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [step]);
+
+  async function handleRunWithCli() {
+    setStep('running');
+    try {
+      const response = await runPlanWithClaudeCli(projectId);
+      const r = await importPlanResponse(projectId, assembled!.prompt, response);
+      setResult(r);
+      setStep('done');
+    } catch (e) {
+      setError(String(e));
+      setStep('error');
+    }
+  }
 
   async function handleImport() {
     if (!assembled || !pastedResponse.trim()) return;
@@ -146,12 +161,21 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
                 </button>
               </div>
 
-              <button
-                onClick={() => setStep('pasting')}
-                className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                I've got the AI response — paste it in
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleRunWithCli}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Bot size={14} />
+                  Run with Claude CLI
+                </button>
+                <button
+                  onClick={() => setStep('pasting')}
+                  className="w-full py-2.5 bg-transparent border border-[#2a2d3a] hover:bg-white/5 text-gray-300 rounded-lg text-sm transition-colors"
+                >
+                  I'll paste the response manually
+                </button>
+              </div>
             </>
           )}
 
@@ -170,6 +194,15 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
                 className="w-full bg-[#161921] border border-[#2a2d3a] rounded-lg px-3 py-2.5 text-sm font-mono text-gray-200 placeholder-gray-600 outline-none focus:border-violet-500/50 resize-none"
                 placeholder='Paste AI response here (JSON or ```json...``` fenced)…'
               />
+            </div>
+          )}
+
+          {/* Running via CLI */}
+          {step === 'running' && (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <Loader2 size={24} className="text-violet-400 animate-spin" />
+              <p className="text-gray-400 text-sm">Running Claude CLI…</p>
+              <p className="text-gray-600 text-xs">This usually takes 15–30 seconds</p>
             </div>
           )}
 
@@ -258,7 +291,7 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
                 Import Plan
               </button>
             </>
-          ) : step !== 'assembling' && step !== 'importing' ? (
+          ) : step !== 'assembling' && step !== 'importing' && step !== 'running' ? (
             <button
               onClick={onClose}
               className="px-4 py-2 text-gray-400 hover:text-gray-200 text-sm"

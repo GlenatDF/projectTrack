@@ -69,6 +69,7 @@ pub fn run() {
             commands::update_methodology_block,
             commands::assemble_planning_prompt,
             commands::import_plan_response,
+            commands::run_plan_with_claude_cli,
             commands::get_project_plan,
             commands::update_task_status,
             commands::update_phase_status,

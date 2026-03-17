@@ -688,6 +688,66 @@ pub fn import_plan_response(
         .map_err(|e| e.to_string())
 }
 
+// ── Planning: Run prompt via Claude CLI ───────────────────────────────────────
+
+/// Assemble the planning prompt for a project, pipe it to `claude --print`
+/// via stdin, and return the raw response text for import.
+/// The DB lock is held only briefly (prompt assembly), then released before
+/// the slow CLI call so other commands are not blocked.
+#[tauri::command]
+pub fn run_plan_with_claude_cli(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    // Assemble prompt under a short-lived lock
+    let prompt = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        db::assemble_prompt(&conn, project_id)
+            .map_err(|e| e.to_string())?
+            .prompt
+    };
+
+    // Try claude in PATH first, then common install locations
+    let candidates = [
+        "claude",
+        "/usr/local/bin/claude",
+        "/opt/homebrew/bin/claude",
+        "/usr/bin/claude",
+    ];
+
+    let mut last_err = String::new();
+    for candidate in &candidates {
+        match Command::new(candidate)
+            .arg("--print")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin
+                        .write_all(prompt.as_bytes())
+                        .map_err(|e| e.to_string())?;
+                }
+                let out = child.wait_with_output().map_err(|e| e.to_string())?;
+                if out.status.success() {
+                    return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+                }
+                return Err(format!(
+                    "Claude CLI exited with an error:\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                ));
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+
+    Err(format!(
+        "Claude CLI not found. Install it with:\n  npm install -g @anthropic-ai/claude-code\n\n({last_err})"
+    ))
+}
+
 // ── Planning: Plan read / status updates ──────────────────────────────────────
 
 #[tauri::command]
