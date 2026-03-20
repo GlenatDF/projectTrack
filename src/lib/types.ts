@@ -263,7 +263,7 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
   prd:             'Product Requirements',
   tech_spec:       'Technical Specification',
   ai_instructions: 'AI Instructions',
-  risks:           'Risk Register',
+  risks:           'Risks / Assumptions / Dependencies',
   decisions:       'Decision Log',
   handoff:         'Session Handoff',
   scratchpad:      'Scratchpad',

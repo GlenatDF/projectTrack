@@ -690,6 +690,27 @@ pub fn import_plan_response(
 
 // ── Planning: Run prompt via Claude CLI ───────────────────────────────────────
 
+/// Build an augmented PATH that includes common Node.js and Homebrew
+/// locations. Tauri apps launch with a restricted environment (no shell
+/// profile sourced), so node/claude may not be on the inherited PATH.
+fn augmented_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let extras = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ];
+    let mut parts: Vec<&str> = extras.iter().copied().collect();
+    if !current.is_empty() {
+        parts.push(&current);
+    }
+    parts.join(":")
+}
+
 /// Assemble the planning prompt for a project, pipe it to `claude --print`
 /// via stdin, and return the raw response text for import.
 /// The DB lock is held only briefly (prompt assembly), then released before
@@ -707,6 +728,8 @@ pub fn run_plan_with_claude_cli(
             .prompt
     };
 
+    let path = augmented_path();
+
     // Try claude in PATH first, then common install locations
     let candidates = [
         "claude",
@@ -719,6 +742,7 @@ pub fn run_plan_with_claude_cli(
     for candidate in &candidates {
         match Command::new(candidate)
             .arg("--print")
+            .env("PATH", &path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
