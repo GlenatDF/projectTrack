@@ -5,11 +5,11 @@ import {
   CheckCircle2,
   ClipboardCopy,
   Loader2,
-  Sparkles,
-  X,
 } from 'lucide-react';
 import { assemblePlanningPrompt, getProjectPlan, importPlanResponse, runPlanWithClaudeCli } from '../../lib/api';
 import type { AssembledPrompt, ImportPlanResult } from '../../lib/types';
+import { Button } from '../ui/Button';
+import { Modal } from '../ui/Modal';
 
 type Step =
   | 'assembling'
@@ -39,11 +39,8 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        // Check for existing plan
         const plan = await getProjectPlan(projectId);
         setHasExistingPlan(plan.phases.length > 0);
-
-        // Assemble prompt and copy to clipboard
         const a = await assemblePlanningPrompt(projectId);
         setAssembled(a);
         setStep(plan.phases.length > 0 ? 'confirm' : 'prompt');
@@ -91,216 +88,187 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
     onClose();
   }
 
+  const footer = (
+    <>
+      {step === 'done' && (
+        <Button variant="primary" size="sm" onClick={handleDone}>
+          View Plan
+        </Button>
+      )}
+      {step === 'pasting' && (
+        <>
+          <Button variant="ghost" size="sm"
+            onClick={() => setStep(assembled ? (hasExistingPlan ? 'confirm' : 'prompt') : 'assembling')}>
+            Back
+          </Button>
+          <Button variant="primary" size="sm" onClick={handleImport} disabled={!pastedResponse.trim()}>
+            Import Plan
+          </Button>
+        </>
+      )}
+      {step !== 'assembling' && step !== 'importing' && step !== 'running' && step !== 'done' && step !== 'pasting' && (
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+      )}
+    </>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#1e2130] border border-[#2a2d3a] rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d3a]">
-          <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-violet-400" />
-            <span className="font-semibold text-white">Generate Plan</span>
+    <Modal
+      open={true}
+      onClose={onClose}
+      title="Generate Plan"
+      size="lg"
+      footer={footer}
+    >
+      <div className="space-y-4">
+        {/* Assembling */}
+        {step === 'assembling' && (
+          <div className="flex flex-col items-center justify-center py-10 gap-3">
+            <Loader2 size={20} className="text-violet-400 animate-spin" />
+            <p className="text-slate-500 text-xs">Assembling prompt…</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-300 transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        )}
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* Assembling */}
-          {step === 'assembling' && (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 size={24} className="text-violet-400 animate-spin" />
-              <p className="text-gray-400 text-sm">Assembling prompt…</p>
-            </div>
-          )}
-
-          {/* Prompt ready / confirm re-import */}
-          {(step === 'prompt' || step === 'confirm') && assembled && (
-            <>
-              {assembled.warnings.length > 0 && (
-                <div className="flex gap-2 p-3 bg-amber-900/20 border border-amber-700/30 rounded-lg">
-                  <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-amber-300 text-sm font-medium mb-1">Warnings</p>
-                    {assembled.warnings.map((w, i) => (
-                      <p key={i} className="text-amber-400/80 text-xs">{w}</p>
-                    ))}
-                  </div>
+        {/* Prompt ready / confirm re-import */}
+        {(step === 'prompt' || step === 'confirm') && assembled && (
+          <>
+            {assembled.warnings.length > 0 && (
+              <div className="flex gap-2 p-3 bg-amber-900/15 border border-amber-700/30 rounded-lg">
+                <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-amber-300 text-xs font-medium mb-1">Warnings</p>
+                  {assembled.warnings.map((w, i) => (
+                    <p key={i} className="text-amber-500 text-xs">{w}</p>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {step === 'confirm' && (
-                <div className="flex gap-2 p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
-                  <AlertTriangle size={15} className="text-blue-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-blue-300 text-sm font-medium mb-1">Existing plan detected</p>
-                    <p className="text-blue-400/80 text-xs">
-                      Importing a new plan will replace all AI-generated phases, tasks, risks, and
-                      assumptions. Tasks you've marked as done will be preserved.
-                    </p>
-                  </div>
+            {step === 'confirm' && (
+              <div className="flex gap-2 p-3 bg-blue-900/15 border border-blue-700/30 rounded-lg">
+                <AlertTriangle size={13} className="text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-blue-300 text-xs font-medium mb-1">Existing plan detected</p>
+                  <p className="text-blue-400/80 text-xs">
+                    Importing a new plan will replace all AI-generated phases, tasks, risks, and
+                    assumptions. Tasks you've marked as done will be preserved.
+                  </p>
                 </div>
-              )}
-
-              <div className="space-y-2">
-                <p className="text-gray-300 text-sm">
-                  Your planning prompt has been{' '}
-                  <span className="text-green-400 font-medium">copied to clipboard</span>. Paste it
-                  into Claude (or your AI of choice), then paste the response below.
-                </p>
-                <button
-                  onClick={() => navigator.clipboard.writeText(assembled.prompt)}
-                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  <ClipboardCopy size={12} />
-                  Copy prompt again
-                </button>
               </div>
+            )}
 
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={handleRunWithCli}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Bot size={14} />
-                  Run with Claude CLI
-                </button>
-                <button
-                  onClick={() => setStep('pasting')}
-                  className="w-full py-2.5 bg-transparent border border-[#2a2d3a] hover:bg-white/5 text-gray-300 rounded-lg text-sm transition-colors"
-                >
-                  I'll paste the response manually
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Paste response */}
-          {step === 'pasting' && (
-            <div className="space-y-3">
-              <p className="text-gray-300 text-sm">
-                Paste the AI's full JSON response below:
+            <div className="space-y-1.5">
+              <p className="text-slate-300 text-xs">
+                Your planning prompt has been{' '}
+                <span className="text-green-400 font-medium">copied to clipboard</span>. Paste it
+                into Claude (or your AI of choice), then paste the response below.
               </p>
-              <textarea
-                ref={textareaRef}
-                value={pastedResponse}
-                onChange={e => setPastedResponse(e.target.value)}
-                rows={14}
-                spellCheck={false}
-                className="w-full bg-[#161921] border border-[#2a2d3a] rounded-lg px-3 py-2.5 text-sm font-mono text-gray-200 placeholder-gray-600 outline-none focus:border-violet-500/50 resize-none"
-                placeholder='Paste AI response here (JSON or ```json...``` fenced)…'
-              />
+              <button
+                onClick={() => navigator.clipboard.writeText(assembled.prompt)}
+                className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-400 transition-colors cursor-default"
+              >
+                <ClipboardCopy size={11} />
+                Copy prompt again
+              </button>
             </div>
-          )}
 
-          {/* Running via CLI */}
-          {step === 'running' && (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 size={24} className="text-violet-400 animate-spin" />
-              <p className="text-gray-400 text-sm">Running Claude CLI…</p>
-              <p className="text-gray-600 text-xs">This usually takes 15–30 seconds</p>
+            <div className="flex flex-col gap-2">
+              <Button variant="primary" onClick={handleRunWithCli}
+                className="w-full justify-center py-2.5">
+                <Bot size={13} />
+                Run with Claude CLI
+              </Button>
+              <Button variant="secondary" onClick={() => setStep('pasting')}
+                className="w-full justify-center py-2.5">
+                I'll paste the response manually
+              </Button>
             </div>
-          )}
+          </>
+        )}
 
-          {/* Importing */}
-          {step === 'importing' && (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 size={24} className="text-violet-400 animate-spin" />
-              <p className="text-gray-400 text-sm">Importing plan…</p>
+        {/* Paste response */}
+        {step === 'pasting' && (
+          <div className="space-y-2">
+            <p className="text-slate-400 text-xs">Paste the AI's full JSON response below:</p>
+            <textarea
+              ref={textareaRef}
+              value={pastedResponse}
+              onChange={e => setPastedResponse(e.target.value)}
+              rows={14}
+              spellCheck={false}
+              className="w-full bg-base border border-border rounded px-3 py-2 text-xs font-mono text-slate-300 placeholder-slate-700 outline-none focus:border-violet-500/50 resize-none"
+              placeholder='Paste AI response here (JSON or ```json...``` fenced)…'
+            />
+          </div>
+        )}
+
+        {/* Running via CLI */}
+        {step === 'running' && (
+          <div className="flex flex-col items-center justify-center py-10 gap-3">
+            <Loader2 size={20} className="text-violet-400 animate-spin" />
+            <p className="text-slate-400 text-xs">Running Claude CLI…</p>
+            <p className="text-slate-600 text-xs">This usually takes 15–30 seconds</p>
+          </div>
+        )}
+
+        {/* Importing */}
+        {step === 'importing' && (
+          <div className="flex flex-col items-center justify-center py-10 gap-3">
+            <Loader2 size={20} className="text-violet-400 animate-spin" />
+            <p className="text-slate-400 text-xs">Importing plan…</p>
+          </div>
+        )}
+
+        {/* Done */}
+        {step === 'done' && result && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-green-400" />
+              <span className="text-slate-100 text-sm font-medium">Plan imported successfully</span>
             </div>
-          )}
-
-          {/* Done */}
-          {step === 'done' && result && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={20} className="text-green-400" />
-                <span className="text-white font-medium">Plan imported successfully</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  ['Phases', result.phases_imported],
-                  ['Tasks', result.tasks_imported],
-                  ['Risks', result.risks_imported],
-                  ['Assumptions', result.assumptions_imported],
-                ].map(([label, count]) => (
-                  <div key={label as string} className="bg-[#161921] rounded-lg px-4 py-3">
-                    <div className="text-2xl font-bold text-white">{count}</div>
-                    <div className="text-xs text-gray-400">{label}</div>
-                  </div>
-                ))}
-              </div>
-              {result.preserved_task_count > 0 && (
-                <p className="text-amber-300 text-sm">
-                  {result.preserved_task_count} task
-                  {result.preserved_task_count !== 1 ? 's' : ''} you previously marked were
-                  preserved.
-                </p>
-              )}
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ['Phases', result.phases_imported],
+                ['Tasks', result.tasks_imported],
+                ['Risks', result.risks_imported],
+                ['Assumptions', result.assumptions_imported],
+              ].map(([label, count]) => (
+                <div key={label as string} className="bg-surface border border-border rounded px-3 py-2.5">
+                  <div className="text-xl font-bold text-slate-100">{count}</div>
+                  <div className="text-[11px] text-slate-500">{label}</div>
+                </div>
+              ))}
             </div>
-          )}
-
-          {/* Error */}
-          {step === 'error' && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-red-400">
-                <AlertTriangle size={16} />
-                <span className="font-medium text-sm">Import failed</span>
-              </div>
-              <p className="text-gray-400 text-sm bg-[#161921] rounded p-3 font-mono break-all">
-                {error}
+            {result.preserved_task_count > 0 && (
+              <p className="text-amber-400 text-xs">
+                {result.preserved_task_count} task
+                {result.preserved_task_count !== 1 ? 's' : ''} you previously marked were preserved.
               </p>
-              {step === 'error' && assembled && (
-                <button
-                  onClick={() => { setStep('pasting'); setError(''); }}
-                  className="text-sm text-violet-400 hover:text-violet-300 underline"
-                >
-                  Try again
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-[#2a2d3a] flex justify-end gap-2">
-          {step === 'done' ? (
-            <button
-              onClick={handleDone}
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium"
-            >
-              View Plan
-            </button>
-          ) : step === 'pasting' ? (
-            <>
+        {/* Error */}
+        {step === 'error' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertTriangle size={14} />
+              <span className="text-xs font-medium">Import failed</span>
+            </div>
+            <p className="text-slate-500 text-xs bg-base rounded p-3 font-mono break-all">{error}</p>
+            {assembled && (
               <button
-                onClick={() => setStep(assembled ? (hasExistingPlan ? 'confirm' : 'prompt') : 'assembling')}
-                className="px-4 py-2 text-gray-400 hover:text-gray-200 text-sm"
+                onClick={() => { setStep('pasting'); setError(''); }}
+                className="text-xs text-violet-400 hover:text-violet-300 underline cursor-default"
               >
-                Back
+                Try again
               </button>
-              <button
-                onClick={handleImport}
-                disabled={!pastedResponse.trim()}
-                className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium disabled:opacity-40"
-              >
-                Import Plan
-              </button>
-            </>
-          ) : step !== 'assembling' && step !== 'importing' && step !== 'running' ? (
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-400 hover:text-gray-200 text-sm"
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
+            )}
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

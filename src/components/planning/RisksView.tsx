@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { getProjectPlan } from '../../lib/api';
 import type { ProjectPlan } from '../../lib/types';
 import { RiskLevelBadge } from './RiskLevelBadge';
+import { EmptyState } from '../ui/EmptyState';
+import { SectionLabel } from '../ui/SectionLabel';
 
 interface Props {
   projectId: number;
@@ -25,7 +27,7 @@ export function RisksView({ projectId, planVersion }: Props) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48 text-gray-500 text-sm">
+      <div className="flex items-center justify-center h-40 text-slate-500 text-xs">
         Loading…
       </div>
     );
@@ -33,19 +35,16 @@ export function RisksView({ projectId, planVersion }: Props) {
 
   const risks = plan?.risks ?? [];
   const assumptions = plan?.assumptions ?? [];
-  const empty = risks.length === 0 && assumptions.length === 0;
 
-  if (empty) {
+  if (risks.length === 0 && assumptions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 gap-3">
-        <p className="text-gray-500 text-sm">
-          No risks or assumptions yet. Generate a plan to populate this view.
-        </p>
-      </div>
+      <EmptyState
+        title="No risks or assumptions"
+        description="Generate a plan to populate this view"
+      />
     );
   }
 
-  // Group assumptions by category
   const assumptionsByCategory = assumptions.reduce<Record<string, typeof assumptions>>(
     (acc, a) => {
       const cat = a.category || 'other';
@@ -56,30 +55,28 @@ export function RisksView({ projectId, planVersion }: Props) {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Risks table */}
       {risks.length > 0 && (
         <section>
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
-            Risks ({risks.length})
-          </h3>
-          <div className="border border-[#2a2d3a] rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+          <SectionLabel className="mb-3">Risks ({risks.length})</SectionLabel>
+          <div className="border border-border rounded-lg overflow-hidden">
+            <table className="w-full">
               <thead>
-                <tr className="border-b border-[#2a2d3a] text-xs text-gray-500 uppercase">
-                  <th className="text-left px-4 py-2.5 font-medium">Risk</th>
-                  <th className="text-left px-3 py-2.5 font-medium w-24">Likelihood</th>
-                  <th className="text-left px-3 py-2.5 font-medium w-24">Impact</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Mitigation</th>
+                <tr className="bg-panel border-b border-border">
+                  <th className="text-left px-4 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-widest">Risk</th>
+                  <th className="text-left px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-widest w-24">Likelihood</th>
+                  <th className="text-left px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-widest w-24">Impact</th>
+                  <th className="text-left px-3 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-widest">Mitigation</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#2a2d3a]/50">
-                {risks.map(risk => (
-                  <tr key={risk.id} className="hover:bg-white/2">
+              <tbody>
+                {risks.map((risk, i) => (
+                  <tr key={risk.id} className={`hover:bg-hover transition-colors ${i < risks.length - 1 ? 'border-b border-border-subtle' : ''}`}>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-200">{risk.title}</div>
+                      <div className="text-xs font-medium text-slate-200">{risk.title}</div>
                       {risk.description && (
-                        <div className="text-xs text-gray-500 mt-0.5">{risk.description}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{risk.description}</div>
                       )}
                     </td>
                     <td className="px-3 py-3">
@@ -88,7 +85,7 @@ export function RisksView({ projectId, planVersion }: Props) {
                     <td className="px-3 py-3">
                       <RiskLevelBadge level={risk.impact} />
                     </td>
-                    <td className="px-3 py-3 text-xs text-gray-400">{risk.mitigation || '—'}</td>
+                    <td className="px-3 py-3 text-xs text-slate-500">{risk.mitigation || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -100,23 +97,21 @@ export function RisksView({ projectId, planVersion }: Props) {
       {/* Assumptions grouped by category */}
       {assumptions.length > 0 && (
         <section>
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">
-            Assumptions ({assumptions.length})
-          </h3>
-          <div className="space-y-3">
+          <SectionLabel className="mb-3">Assumptions ({assumptions.length})</SectionLabel>
+          <div className="space-y-2">
             {Object.entries(assumptionsByCategory).map(([category, items]) => (
-              <div key={category} className="border border-[#2a2d3a] rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-white/2 border-b border-[#2a2d3a]">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+              <div key={category} className="border border-border rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-panel border-b border-border">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">
                     {category}
                   </span>
                 </div>
-                <ul className="divide-y divide-[#2a2d3a]/50">
-                  {items.map(assumption => (
-                    <li key={assumption.id} className="px-4 py-3">
-                      <div className="text-sm text-gray-200">{assumption.title}</div>
+                <ul>
+                  {items.map((assumption, i) => (
+                    <li key={assumption.id} className={`px-4 py-2.5 ${i < items.length - 1 ? 'border-b border-border-subtle' : ''}`}>
+                      <div className="text-xs text-slate-300">{assumption.title}</div>
                       {assumption.description && (
-                        <div className="text-xs text-gray-500 mt-0.5">{assumption.description}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{assumption.description}</div>
                       )}
                     </li>
                   ))}

@@ -4,11 +4,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        base: "#0d0f14",
-        surface: "#161921",
-        card: "#1e2130",
-        hover: "#252837",
-        border: "#2d3148",
+        base:    "var(--color-base)",
+        surface: "var(--color-surface)",
+        panel:   "var(--color-panel)",
+        card:    "var(--color-card)",
+        hover:   "var(--color-hover)",
+        border:  "var(--color-border)",
+        "border-subtle": "var(--color-border-subtle)",
+      },
+      fontSize: {
+        "2xs": ["11px", { lineHeight: "1.4" }],
       },
     },
   },

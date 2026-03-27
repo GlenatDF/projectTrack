@@ -4,8 +4,7 @@ import {
   BookOpen, Plus, RefreshCw, FolderOpen, Code2, Terminal,
   Bot, Sparkles, FileText, GitBranch, AlertTriangle,
   Download, Activity, CheckCircle2, BarChart3,
-  ChevronRight, HelpCircle,
-  XCircle, Circle, Star, ClipboardList, ShieldAlert,
+  HelpCircle, XCircle, Circle, Star, ClipboardList, ShieldAlert,
 } from 'lucide-react';
 
 /* ── Section definitions ──────────────────────────────────────────── */
@@ -26,12 +25,12 @@ function SectionHeading({ id, icon: Icon, title, subtitle }: {
 }) {
   return (
     <div id={id} className="flex items-start gap-3 mb-4 scroll-mt-4">
-      <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center shrink-0 mt-0.5">
-        <Icon size={15} className="text-indigo-400" />
+      <div className="w-7 h-7 rounded bg-violet-500/20 flex items-center justify-center shrink-0 mt-0.5">
+        <Icon size={13} className="text-violet-400" />
       </div>
       <div>
-        <h2 className="text-base font-semibold text-slate-100">{title}</h2>
-        <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p>
+        <h2 className="text-sm font-semibold text-slate-100 tracking-tight">{title}</h2>
+        <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
       </div>
     </div>
   );
@@ -39,25 +38,29 @@ function SectionHeading({ id, icon: Icon, title, subtitle }: {
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-card border border-border rounded-xl p-5 ${className}`}>
+    <div className={`bg-card border border-border rounded-lg p-4 ${className}`}>
       {children}
     </div>
   );
 }
 
 function SubHeading({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">{children}</h3>;
+  return (
+    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2">
+      {children}
+    </p>
+  );
 }
 
-function FeatureRow({ icon: Icon, label, desc, iconColor = 'text-indigo-400' }: {
+function FeatureRow({ icon: Icon, label, desc, iconColor = 'text-violet-400' }: {
   icon: React.ElementType; label: string; desc: string; iconColor?: string;
 }) {
   return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-border last:border-0">
-      <Icon size={14} className={`${iconColor} mt-0.5 shrink-0`} />
+    <div className="flex items-start gap-3 py-2 border-b border-border-subtle last:border-0">
+      <Icon size={13} className={`${iconColor} mt-0.5 shrink-0`} />
       <div>
-        <span className="text-sm font-medium text-slate-200">{label}</span>
-        <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+        <span className="text-xs font-medium text-slate-200">{label}</span>
+        <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
       </div>
     </div>
   );
@@ -73,11 +76,11 @@ function KeyChip({ children }: { children: React.ReactNode }) {
 
 function StatusRow({ color, label, desc }: { color: string; label: string; desc: string }) {
   return (
-    <div className="flex items-start gap-3 py-2 border-b border-border last:border-0">
+    <div className="flex items-start gap-3 py-2 border-b border-border-subtle last:border-0">
       <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${color}`} />
       <div>
-        <span className="text-sm font-medium text-slate-200">{label}</span>
-        <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+        <span className="text-xs font-medium text-slate-200">{label}</span>
+        <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
       </div>
     </div>
   );
@@ -112,24 +115,25 @@ export default function Manual() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex-1 flex overflow-hidden">
       {/* ── Left TOC ───────────────────────── */}
-      <nav className="w-44 shrink-0 border-r border-border px-3 py-6 overflow-y-auto">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 mb-3">
-          Contents
-        </p>
-        <div className="space-y-0.5">
+      <nav className="w-44 shrink-0 border-r border-border overflow-y-auto flex flex-col">
+        <div className="px-3 py-3 border-b border-border">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">
+            Contents
+          </p>
+        </div>
+        <div className="py-1">
           {sections.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => scrollTo(id)}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-colors ${
+              className={`w-full text-left px-3 py-1.5 text-xs transition-colors cursor-default border-l-2 ${
                 activeSection === id
-                  ? 'bg-indigo-500/15 text-indigo-300 font-medium'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-hover'
+                  ? 'bg-hover text-slate-100 font-medium border-l-2 border-violet-500'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-hover border-transparent'
               }`}
             >
-              {activeSection === id && <ChevronRight size={11} className="shrink-0" />}
               {label}
             </button>
           ))}
@@ -142,12 +146,12 @@ export default function Manual() {
 
           {/* Header */}
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center">
-              <BookOpen size={17} className="text-indigo-400" />
+            <div className="w-8 h-8 rounded bg-violet-500/20 flex items-center justify-center shrink-0">
+              <BookOpen size={15} className="text-violet-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-100">User Manual</h1>
-              <p className="text-sm text-slate-400 mt-0.5">Complete guide to Project Tracker</p>
+              <h1 className="text-sm font-semibold text-slate-100 tracking-tight">User Manual</h1>
+              <p className="text-xs text-slate-500 mt-0.5">Complete guide to Project Tracker</p>
             </div>
           </div>
 
@@ -160,7 +164,7 @@ export default function Manual() {
               subtitle="What Project Tracker is and how to use it"
             />
             <Card>
-              <p className="text-sm text-slate-300 leading-relaxed mb-4">
+              <p className="text-xs text-slate-300 leading-relaxed mb-4">
                 <strong className="text-slate-100">Project Tracker</strong> is a local-only macOS desktop app
                 for tracking your AI-assisted vibe-coding projects. All data is stored in a SQLite database on
                 your Mac — no accounts, no cloud sync, no internet required.
@@ -168,10 +172,10 @@ export default function Manual() {
               <SubHeading>Key capabilities</SubHeading>
               <div className="space-y-0">
                 <FeatureRow icon={FolderKanban} label="Project registry" desc="Keep a catalogue of all your coding projects with status, phase, priority, and health tracking." />
-                <FeatureRow icon={Activity} label="Git scanning" desc="Scan linked repos for recent commits, dirty state, and activity to auto-update health scores." />
-                <FeatureRow icon={Sparkles} label="AI planning" desc="Generate structured plans with phases, tasks, risks, and assumptions via Claude." />
-                <FeatureRow icon={FileText} label="Project documents" desc="Auto-scaffold 8 living docs per project (brief, architecture, decisions log, etc.)." />
-                <FeatureRow icon={Download} label="Portability" desc="Export/import all project metadata as JSON for backup or machine migration." />
+                <FeatureRow icon={Activity} label="Git scanning" desc="Scan linked repos for recent commits, dirty state, and activity to auto-update health scores." iconColor="text-cyan-400" />
+                <FeatureRow icon={Sparkles} label="AI planning" desc="Generate structured plans with phases, tasks, risks, and assumptions via Claude." iconColor="text-amber-400" />
+                <FeatureRow icon={FileText} label="Project documents" desc="Auto-scaffold 8 living docs per project (brief, architecture, decisions log, etc.)." iconColor="text-slate-400" />
+                <FeatureRow icon={Download} label="Portability" desc="Export/import all project metadata as JSON for backup or machine migration." iconColor="text-green-400" />
               </div>
             </Card>
           </section>
@@ -194,12 +198,12 @@ export default function Manual() {
             </Card>
             <Card>
               <SubHeading>Status filter tabs</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 Click a status tab (All / Active / Paused / Done / Idea) to filter the project list below the stats.
                 The count badge on each tab updates live.
               </p>
               <SubHeading>Project cards</SubHeading>
-              <p className="text-sm text-slate-400">
+              <p className="text-xs text-slate-500">
                 Each card shows the project name, status badge, phase, priority dot, health dot, last scan time,
                 and a git dirty indicator. Click any card to open the full Project Detail view.
               </p>
@@ -216,7 +220,7 @@ export default function Manual() {
             />
             <Card className="mb-3">
               <SubHeading>Creating a project</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 Click <strong className="text-slate-300">+ New Project</strong> (top-right of Projects or Dashboard).
                 Fill in:
               </p>
@@ -229,7 +233,7 @@ export default function Manual() {
             </Card>
             <Card>
               <SubHeading>Filtering &amp; sorting</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 The Projects page has filter controls for <strong className="text-slate-300">phase</strong>,{' '}
                 <strong className="text-slate-300">priority</strong>, and quick toggles for{' '}
                 <strong className="text-slate-300">Dirty</strong> and{' '}
@@ -237,7 +241,7 @@ export default function Manual() {
                 The search box filters by name/description in real time.
               </p>
               <SubHeading>Editing &amp; deleting</SubHeading>
-              <p className="text-sm text-slate-400">
+              <p className="text-xs text-slate-500">
                 Open a project then click the <strong className="text-slate-300">Edit</strong> button (pencil icon)
                 in the detail header. To delete, use the trash icon — you'll be asked to confirm.
                 Deletion is permanent and removes all associated scans, documents, and plan data.
@@ -266,12 +270,12 @@ export default function Manual() {
             </Card>
             <Card className="mb-3">
               <SubHeading>Notes &amp; relinking</SubHeading>
-              <p className="text-sm text-slate-400 mb-2">
+              <p className="text-xs text-slate-500 mb-2">
                 The <strong className="text-slate-300">Notes</strong> field on the Overview tab is free-form
-                markdown text. Click to enter edit mode, then <KeyChip>Save</KeyChip> or press{' '}
+                text. Click to enter edit mode, then <KeyChip>Save</KeyChip> or press{' '}
                 <KeyChip>Esc</KeyChip> to cancel.
               </p>
-              <p className="text-sm text-slate-400">
+              <p className="text-xs text-slate-500">
                 If the project was imported from another Mac (or the folder moved), use{' '}
                 <strong className="text-slate-300">Relink Repo Path</strong> (link icon) to update the
                 local path without touching any other metadata.
@@ -279,7 +283,7 @@ export default function Manual() {
             </Card>
             <Card>
               <SubHeading>Scan history</SubHeading>
-              <p className="text-sm text-slate-400">
+              <p className="text-xs text-slate-500">
                 The right column shows the last 10 git scans with timestamps, commit hashes, dirty status,
                 and file change counts. Useful for spotting when a project went stale.
               </p>
@@ -296,29 +300,29 @@ export default function Manual() {
             />
             <Card className="mb-3">
               <SubHeading>Docs tab</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 Every project is auto-scaffolded with 8 living documents when it is created:
               </p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400 mb-3">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0 text-xs text-slate-400 mb-3">
                 {[
                   'Project Brief', 'Architecture Notes', 'Decision Log',
                   'Implementation Notes', 'Testing Plan', 'Deployment Runbook',
                   'Retrospective', 'Claude Instructions',
                 ].map(d => (
-                  <div key={d} className="flex items-center gap-1.5 py-1 border-b border-border/50">
-                    <FileText size={11} className="text-slate-500 shrink-0" />
+                  <div key={d} className="flex items-center gap-1.5 py-1 border-b border-border-subtle">
+                    <FileText size={11} className="text-slate-600 shrink-0" />
                     <span>{d}</span>
                   </div>
                 ))}
               </div>
-              <p className="text-sm text-slate-400">
-                Click any document to expand and edit it. Changes are saved immediately.
-                Mark a doc as <strong className="text-slate-300">Done</strong> when it's complete.
+              <p className="text-xs text-slate-500">
+                Click any document to open and edit it in the editor pane.
+                Mark a doc status as <strong className="text-slate-300">Final</strong> when it's complete.
               </p>
             </Card>
             <Card className="mb-3">
               <SubHeading>Generating a plan</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 On the <strong className="text-slate-300">Plan tab</strong>, click{' '}
                 <strong className="text-slate-300">Generate Plan</strong>. The modal assembles a
                 prompt from your project details and methodology blocks, then gives you two options:
@@ -337,7 +341,7 @@ export default function Manual() {
                   iconColor="text-slate-400"
                 />
               </div>
-              <p className="text-sm text-slate-400">
+              <p className="text-xs text-slate-500">
                 Re-importing a plan only replaces phases/tasks you haven't manually edited
                 (<strong className="text-slate-300">user_modified</strong> flag is respected).
               </p>
@@ -348,7 +352,7 @@ export default function Manual() {
                 <FeatureRow icon={ClipboardList} label="Phases" desc="Top-level milestones. Each phase has an ordered list of tasks. Mark phases done when all tasks complete." iconColor="text-violet-400" />
                 <FeatureRow icon={CheckCircle2} label="Tasks" desc="Leaf-level work items. Toggle between pending / in-progress / done by clicking the status icon." iconColor="text-green-400" />
               </div>
-              <div className="mt-3">
+              <div className="mt-3 pt-1">
                 <SubHeading>Risks tab</SubHeading>
                 <div className="space-y-0">
                   <FeatureRow icon={ShieldAlert} label="Risks" desc="Identified risks with likelihood and impact levels (low / medium / high / critical)." iconColor="text-red-400" />
@@ -367,15 +371,15 @@ export default function Manual() {
               subtitle="Scan your filesystem for existing repos to add as projects"
             />
             <Card>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 The Discover page lets you point Project Tracker at a root folder (e.g.{' '}
-                <code className="text-xs bg-surface border border-border rounded px-1 py-0.5 font-mono">~/Projects</code>)
+                <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">~/Projects</code>)
                 and find all git repositories beneath it.
               </p>
               <div className="space-y-0">
-                <FeatureRow icon={FolderSearch} label="Scan directory" desc="Enter a path and click Scan. Results list all .git folders found, one level deep by default." />
-                <FeatureRow icon={Plus} label="Add to tracker" desc="Click the + button next to any discovered repo to create a new project entry pre-filled with the path and name." iconColor="text-green-400" />
-                <FeatureRow icon={CheckCircle2} label="Already tracked" desc="Repos that are already in Project Tracker are shown with a check mark and can't be added twice." iconColor="text-slate-500" />
+                <FeatureRow icon={FolderSearch} label="Scan directory" desc="Enter a path and click Scan. Results list all .git folders found, one level deep by default." iconColor="text-slate-400" />
+                <FeatureRow icon={Plus} label="Add to tracker" desc="Select repos and click Import. New project entries are pre-filled with the path and name." iconColor="text-green-400" />
+                <FeatureRow icon={CheckCircle2} label="Already tracked" desc="Repos that are already in Project Tracker are shown as tracked and can't be added twice." iconColor="text-slate-500" />
               </div>
             </Card>
           </section>
@@ -386,35 +390,42 @@ export default function Manual() {
               id="settings"
               icon={Settings}
               title="Settings"
-              subtitle="Data portability and app information"
+              subtitle="Appearance, data portability, and app information"
             />
+            <Card className="mb-3">
+              <SubHeading>Appearance</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={Settings} label="Theme" desc="Toggle between Dark and Light mode. Your choice is saved and restored on next launch." iconColor="text-violet-400" />
+                <FeatureRow icon={Settings} label="Zoom" desc="Scale the entire UI to 90%, 100%, 115%, or 130%. Useful for high-DPI displays or personal preference." iconColor="text-slate-400" />
+              </div>
+            </Card>
             <Card>
               <SubHeading>Export JSON</SubHeading>
-              <p className="text-sm text-slate-400 mb-4">
-                Downloads a <code className="text-xs bg-surface border border-border rounded px-1 py-0.5 font-mono">.json</code> file
+              <p className="text-xs text-slate-500 mb-3">
+                Downloads a <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">.json</code> file
                 containing all projects, documents, plan data, scans, and settings. Use this for:
               </p>
-              <ul className="text-sm text-slate-400 space-y-1 mb-4 list-none pl-0">
+              <ul className="text-xs text-slate-500 space-y-1 mb-4 list-none pl-0">
                 {[
                   'Regular backups of your project registry',
                   'Migrating to a new Mac',
                   'Sharing a project catalogue with a team member',
                 ].map(t => (
                   <li key={t} className="flex items-start gap-2">
-                    <Download size={12} className="text-indigo-400 mt-1 shrink-0" />
+                    <Download size={11} className="text-violet-400 mt-0.5 shrink-0" />
                     {t}
                   </li>
                 ))}
               </ul>
               <SubHeading>Import JSON</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 Select a previously exported file. Projects are imported without overwriting existing ones
                 (matched by name). Local repo paths are preserved in the data but are machine-specific —
                 use <strong className="text-slate-300">Relink Repo Path</strong> on each project after importing
                 to restore git scanning.
               </p>
               <SubHeading>Storage location</SubHeading>
-              <p className="text-xs text-slate-500 font-mono bg-surface border border-border rounded-lg px-3 py-2">
+              <p className="text-xs text-slate-600 font-mono bg-surface border border-border rounded px-3 py-2">
                 ~/Library/Application Support/com.glen.projecttracker/projects.db
               </p>
             </Card>
@@ -440,7 +451,7 @@ export default function Manual() {
             </Card>
             <Card className="mb-3">
               <SubHeading>Project phases</SubHeading>
-              <div className="grid grid-cols-2 gap-x-4 text-xs text-slate-400">
+              <div className="grid grid-cols-2 gap-x-4 text-xs text-slate-500">
                 {[
                   ['Discovery', 'Research and requirements gathering'],
                   ['Planning', 'Architecture and task breakdown'],
@@ -449,9 +460,9 @@ export default function Manual() {
                   ['Deployment', 'Releasing and monitoring'],
                   ['Maintenance', 'Ongoing improvements'],
                 ].map(([name, desc]) => (
-                  <div key={name} className="py-1.5 border-b border-border/50">
+                  <div key={name} className="py-1.5 border-b border-border-subtle">
                     <span className="text-slate-300 font-medium">{name}</span>
-                    <p className="text-slate-500 mt-0.5">{desc}</p>
+                    <p className="text-slate-600 mt-0.5">{desc}</p>
                   </div>
                 ))}
               </div>
@@ -467,7 +478,7 @@ export default function Manual() {
             </Card>
             <Card>
               <SubHeading>Health scoring</SubHeading>
-              <p className="text-sm text-slate-400 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 Health is computed from the most recent git scan. A project is considered:
               </p>
               <div className="space-y-0">

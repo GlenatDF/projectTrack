@@ -2,6 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Theme tokens ──────────────────────────────────────────────────────────── */
+
+:root {
+  /* Dark theme (default) */
+  --color-base:             #0d0f14;
+  --color-surface:          #111318;
+  --color-panel:            #161b25;
+  --color-card:             #1a2035;
+  --color-hover:            #1f263d;
+  --color-border:           #252d40;
+  --color-border-subtle:    #1d2438;
+  --color-scrollbar:        #252d40;
+  --color-scrollbar-hover:  #334060;
+  --color-select-option-bg: #1a2035;
+  --color-select-option-fg: #e2e8f0;
+}
+
+:root[data-theme="light"] {
+  --color-base:             #f0f2f5;
+  --color-surface:          #e8ebf0;
+  --color-panel:            #dde3ed;
+  --color-card:             #ffffff;
+  --color-hover:            #e2e8f2;
+  --color-border:           #c4cedf;
+  --color-border-subtle:    #d0d8e8;
+  --color-scrollbar:        #c4cedf;
+  --color-scrollbar-hover:  #a0aec0;
+  --color-select-option-bg: #ffffff;
+  --color-select-option-fg: #1e293b;
+}
+
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 
 :root {
@@ -13,13 +44,21 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
   margin: 0;
   padding: 0;
-  background-color: #0d0f14;
-  color: #e2e8f0;
-  overflow: hidden; /* Tauri window handles scrolling in the content area */
-  user-select: none; /* Prevent text selection on UI chrome */
+  background-color: var(--color-base);
+  color: #cbd5e1; /* slate-300 */
+  overflow: hidden;
+  user-select: none;
+}
+
+:root[data-theme="light"] body {
+  color: #334155; /* slate-700 */
 }
 
 /* Allow text selection inside inputs, textareas, and note content */
@@ -27,11 +66,45 @@ input, textarea, [data-selectable] {
   user-select: text;
 }
 
+/* ── Light mode: text color overrides ─────────────────────────────────────── */
+
+:root[data-theme="light"] .text-slate-100,
+:root[data-theme="light"] .text-slate-200,
+:root[data-theme="light"] .text-slate-300 {
+  color: #1e293b; /* slate-800 */
+}
+
+:root[data-theme="light"] .text-slate-400 {
+  color: #475569; /* slate-600 */
+}
+
+:root[data-theme="light"] .text-slate-500 {
+  color: #64748b; /* unchanged — already readable */
+}
+
+:root[data-theme="light"] .text-slate-600 {
+  color: #334155; /* slate-700 */
+}
+
+/* ── Light mode: background overrides ─────────────────────────────────────── */
+
+:root[data-theme="light"] .bg-slate-800,
+:root[data-theme="light"] .bg-slate-900 {
+  background-color: var(--color-panel);
+}
+
+/* ── Light mode: border overrides ─────────────────────────────────────────── */
+
+:root[data-theme="light"] .border-slate-700,
+:root[data-theme="light"] .border-slate-800 {
+  border-color: var(--color-border);
+}
+
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -39,26 +112,12 @@ input, textarea, [data-selectable] {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2d3148;
+  background: var(--color-scrollbar);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d4168;
-}
-
-/* ── Tailwind colour aliases (used in tailwind.config.js extend.colors) ────── */
-
-.bg-base    { background-color: #0d0f14; }
-.bg-surface { background-color: #161921; }
-.bg-card    { background-color: #1e2130; }
-.bg-hover   { background-color: #252837; }
-.border-border { border-color: #2d3148; }
-
-/* ── Animations ────────────────────────────────────────────────────────────── */
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+  background: var(--color-scrollbar-hover);
 }
 
 /* ── Select styling override (native select on macOS) ──────────────────────── */
@@ -73,6 +132,21 @@ select {
 }
 
 select option {
-  background-color: #1e2130;
-  color: #e2e8f0;
+  background-color: var(--color-select-option-bg);
+  color: var(--color-select-option-fg);
+}
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
 }

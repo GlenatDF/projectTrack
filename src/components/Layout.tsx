@@ -24,9 +24,11 @@ export function Layout() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-base text-slate-200 overflow-hidden">
+    <div className="flex h-screen bg-base overflow-hidden">
       <Sidebar autoScanState={autoScanState} />
-      <main className="flex-1 overflow-y-auto"><Outlet /></main>
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Outlet />
+      </main>
     </div>
   );
 }
