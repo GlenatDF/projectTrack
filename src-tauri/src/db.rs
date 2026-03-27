@@ -292,6 +292,11 @@ fn run_migrations(conn: &Connection) {
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN session_handoff_notes TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN startup_command TEXT NOT NULL DEFAULT 'claude'", []);
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN preferred_terminal TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN claude_session_id TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN progress_note TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN started_at TEXT", []);
+    let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN completed_at TEXT", []);
+    let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN last_worked_at TEXT", []);
     migrate_add_operating_standard(conn);
 }
 
@@ -652,6 +657,22 @@ pub struct ProjectTask {
     pub ai_generated: bool,
     pub user_modified: bool,
     pub created_at: String,
+    pub progress_note: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_worked_at: Option<String>,
+}
+
+/// A task in `in_progress` status, enriched with the parent project name.
+/// Used by the dashboard "In Focus" panel.
+#[derive(Debug, Serialize, Clone)]
+pub struct InProgressTask {
+    pub id: i64,
+    pub project_id: i64,
+    pub project_name: String,
+    pub title: String,
+    pub category: String,
+    pub status: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -1495,6 +1516,10 @@ fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectTask> {
         ai_generated: row.get::<_, i64>(9)? != 0,
         user_modified: row.get::<_, i64>(10)? != 0,
         created_at: row.get(11)?,
+        progress_note: row.get::<_, Option<String>>(12)?.unwrap_or_default(),
+        started_at: row.get(13)?,
+        completed_at: row.get(14)?,
+        last_worked_at: row.get(15)?,
     })
 }
 
@@ -1554,7 +1579,8 @@ pub fn fetch_project_plan(conn: &Connection, project_id: i64) -> Result<ProjectP
 
     let mut task_stmt = conn.prepare(
         "SELECT id, project_id, phase_id, title, description, category,
-                effort_estimate, status, sort_order, ai_generated, user_modified, created_at
+                effort_estimate, status, sort_order, ai_generated, user_modified, created_at,
+                progress_note, started_at, completed_at, last_worked_at
          FROM project_tasks
          WHERE project_id = ?1
          ORDER BY phase_id ASC NULLS LAST, sort_order ASC",
@@ -1592,13 +1618,58 @@ pub fn update_task_status_record(
     task_id: i64,
     status: &str,
 ) -> Result<ProjectTask> {
+    match status {
+        "in_progress" => conn.execute(
+            "UPDATE project_tasks SET status = ?1, user_modified = 1,
+             started_at = COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+             last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+             WHERE id = ?2",
+            params![status, task_id],
+        )?,
+        "done" => conn.execute(
+            "UPDATE project_tasks SET status = ?1, user_modified = 1,
+             completed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+             last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+             WHERE id = ?2",
+            params![status, task_id],
+        )?,
+        "paused" | "blocked" => conn.execute(
+            "UPDATE project_tasks SET status = ?1, user_modified = 1,
+             last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+             WHERE id = ?2",
+            params![status, task_id],
+        )?,
+        _ => conn.execute(
+            "UPDATE project_tasks SET status = ?1, user_modified = 1,
+             completed_at = NULL WHERE id = ?2",
+            params![status, task_id],
+        )?,
+    };
+    conn.query_row(
+        "SELECT id, project_id, phase_id, title, description, category,
+                effort_estimate, status, sort_order, ai_generated, user_modified, created_at,
+                progress_note, started_at, completed_at, last_worked_at
+         FROM project_tasks WHERE id = ?1",
+        params![task_id],
+        row_to_task,
+    )
+}
+
+pub fn update_task_progress_note_record(
+    conn: &Connection,
+    task_id: i64,
+    note: &str,
+) -> Result<ProjectTask> {
     conn.execute(
-        "UPDATE project_tasks SET status = ?1, user_modified = 1 WHERE id = ?2",
-        params![status, task_id],
+        "UPDATE project_tasks SET progress_note = ?1, user_modified = 1,
+         last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+         WHERE id = ?2",
+        params![note, task_id],
     )?;
     conn.query_row(
         "SELECT id, project_id, phase_id, title, description, category,
-                effort_estimate, status, sort_order, ai_generated, user_modified, created_at
+                effort_estimate, status, sort_order, ai_generated, user_modified, created_at,
+                progress_note, started_at, completed_at, last_worked_at
          FROM project_tasks WHERE id = ?1",
         params![task_id],
         row_to_task,
@@ -1623,6 +1694,27 @@ pub fn update_phase_status_record(
     )
 }
 
+pub fn fetch_in_progress_tasks(conn: &Connection) -> Result<Vec<InProgressTask>> {
+    let mut stmt = conn.prepare(
+        "SELECT pt.id, pt.project_id, p.name, pt.title, pt.category, pt.status
+         FROM project_tasks pt
+         JOIN projects p ON p.id = pt.project_id
+         WHERE pt.status IN ('in_progress', 'paused', 'blocked')
+         ORDER BY p.name ASC, pt.sort_order ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(InProgressTask {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            project_name: row.get(2)?,
+            title: row.get(3)?,
+            category: row.get(4)?,
+            status: row.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn fetch_ai_plan_runs(conn: &Connection, project_id: i64) -> Result<Vec<AiPlanRun>> {
     let mut stmt = conn.prepare(
         "SELECT id, project_id, template_slug, parsed_ok, error_message,
@@ -1634,4 +1726,227 @@ pub fn fetch_ai_plan_runs(conn: &Connection, project_id: i64) -> Result<Vec<AiPl
     )?;
     let rows = stmt.query_map(params![project_id], row_to_ai_plan_run)?;
     rows.collect()
+}
+
+// ── Claude session management ──────────────────────────────────────────────────
+
+/// Generate a UUID v4 using SQLite's randomblob for entropy.
+fn generate_session_uuid(conn: &Connection) -> Result<String> {
+    conn.query_row(
+        "SELECT lower(hex(randomblob(4))) || '-' ||
+                lower(hex(randomblob(2))) || '-4' ||
+                lower(substr(hex(randomblob(2)),2)) || '-' ||
+                case (abs(random()) % 4)
+                    when 0 then '8' when 1 then '9' when 2 then 'a' else 'b'
+                end ||
+                lower(substr(hex(randomblob(2)),2)) || '-' ||
+                lower(hex(randomblob(6)))",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+}
+
+/// Return the existing claude_session_id for a project, or create and persist
+/// a fresh UUID if none exists yet. Idempotent.
+pub fn ensure_project_session_id(conn: &Connection, project_id: i64) -> Result<String> {
+    let current: String = conn.query_row(
+        "SELECT claude_session_id FROM projects WHERE id = ?1",
+        params![project_id],
+        |r| r.get(0),
+    )?;
+    if !current.is_empty() {
+        return Ok(current);
+    }
+    let new_id = generate_session_uuid(conn)?;
+    conn.execute(
+        "UPDATE projects SET claude_session_id = ?1 WHERE id = ?2",
+        params![new_id, project_id],
+    )?;
+    Ok(new_id)
+}
+
+/// Clear the stored session UUID so the next session starts a fresh conversation.
+pub fn clear_project_session_id(conn: &Connection, project_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE projects SET claude_session_id = '' WHERE id = ?1",
+        params![project_id],
+    )?;
+    Ok(())
+}
+
+/// Build the project opener prompt from live project fields and docs.
+/// Used as the first message when starting a Claude session.
+pub fn assemble_opener_prompt(conn: &Connection, project_id: i64) -> Result<String> {
+    let project = fetch_project(conn, project_id)?;
+
+    // Prefer ai_instructions doc if it has been meaningfully filled in
+    let ai_instructions: Option<String> = conn
+        .query_row(
+            "SELECT content FROM project_documents
+             WHERE project_id = ?1 AND doc_type = 'ai_instructions'",
+            params![project_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|s| s.trim().len() > 50); // only use if substantive
+
+    // Fetch active and upcoming tasks for session context
+    let mut task_stmt = conn.prepare(
+        "SELECT id, project_id, phase_id, title, description, category,
+                effort_estimate, status, sort_order, ai_generated, user_modified, created_at,
+                progress_note, started_at, completed_at, last_worked_at
+         FROM project_tasks
+         WHERE project_id = ?1 AND status IN ('in_progress', 'paused', 'blocked', 'pending')
+         ORDER BY
+           CASE status WHEN 'in_progress' THEN 0 WHEN 'paused' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,
+           sort_order ASC
+         LIMIT 20",
+    )?;
+    let tasks: Vec<ProjectTask> = task_stmt
+        .query_map(params![project_id], row_to_task)?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(build_opener_text(&project, ai_instructions.as_deref(), &tasks))
+}
+
+// ── App settings ──────────────────────────────────────────────────────────────
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<String> {
+    match conn.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        params![key],
+        |r| r.get::<_, String>(0),
+    ) {
+        Ok(v) => Ok(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(String::new()),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+pub fn get_all_settings(conn: &Connection) -> Result<std::collections::HashMap<String, String>> {
+    let mut stmt = conn.prepare("SELECT key, value FROM app_settings")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (k, v) = row?;
+        map.insert(k, v);
+    }
+    Ok(map)
+}
+
+fn build_opener_text(project: &Project, ai_instructions: Option<&str>, tasks: &[ProjectTask]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    // Project identity
+    parts.push(format!("# Project: {}", project.name));
+    if !project.description.is_empty() {
+        parts.push(project.description.clone());
+    }
+
+    // Current work (legacy free-text fields)
+    let mut work: Vec<String> = Vec::new();
+    if !project.current_task.is_empty() {
+        work.push(format!("**Working on:** {}", project.current_task));
+    }
+    if !project.next_task.is_empty() {
+        work.push(format!("**Next up:** {}", project.next_task));
+    }
+    if !project.blocker.is_empty() {
+        work.push(format!("**Blocker:** {}", project.blocker));
+    }
+    if !work.is_empty() {
+        parts.push(format!("## Right Now\n\n{}", work.join("\n")));
+    }
+
+    // Task list (structured planning tasks)
+    let active: Vec<&ProjectTask> = tasks
+        .iter()
+        .filter(|t| matches!(t.status.as_str(), "in_progress" | "paused" | "blocked"))
+        .collect();
+    let pending: Vec<&ProjectTask> = tasks
+        .iter()
+        .filter(|t| t.status == "pending")
+        .take(5)
+        .collect();
+
+    if !active.is_empty() || !pending.is_empty() {
+        let mut lines: Vec<String> = Vec::new();
+        if !active.is_empty() {
+            lines.push("**Active tasks:**".to_string());
+            for t in &active {
+                let label = match t.status.as_str() {
+                    "in_progress" => "▶ In progress",
+                    "paused"      => "⏸ Paused",
+                    "blocked"     => "⊘ Blocked",
+                    _             => &t.status,
+                };
+                let note = if t.progress_note.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", t.progress_note)
+                };
+                lines.push(format!("- [{}] {}{}", label, t.title, note));
+            }
+        }
+        if !pending.is_empty() {
+            if !active.is_empty() { lines.push(String::new()); }
+            lines.push("**Up next:**".to_string());
+            for t in &pending {
+                lines.push(format!("- {}", t.title));
+            }
+        }
+        parts.push(format!("## Tasks\n\n{}", lines.join("\n")));
+    }
+
+    // Instructions: project-specific startup prompt takes priority, then ai_instructions doc
+    let instructions: Option<&str> = if !project.claude_startup_prompt.is_empty() {
+        Some(&project.claude_startup_prompt)
+    } else {
+        ai_instructions
+    };
+    if let Some(instr) = instructions {
+        parts.push(format!("## Project Instructions\n\n{}", instr));
+    }
+
+    // Priority files
+    if !project.claude_priority_files.is_empty() {
+        parts.push(format!("## Key Files\n\n{}", project.claude_priority_files));
+    }
+
+    // Session handoff notes (the short per-project field, not the full doc)
+    if !project.session_handoff_notes.is_empty() {
+        parts.push(format!("## Session Notes\n\n{}", project.session_handoff_notes));
+    }
+
+    parts.push(
+        "## Task Status Hints\n\n\
+         If during this session you believe a task status has changed, you may optionally \
+         emit a structured hint on its own line at the very end of your response:\n\n  \
+         [task: \"partial task title\" -> done]\n  \
+         [task: \"partial task title\" -> paused]\n\n\
+         The app will parse this and prompt the user to confirm before updating anything. \
+         Only emit when reasonably confident. Do not guess or emit hints for tasks you \
+         have not actively worked on. Malformed or missing hints are silently ignored."
+            .to_string(),
+    );
+
+    parts.push(
+        "---\n\nPlease confirm you've read this context. \
+         List any active tasks you see, note their progress, and ask whether I want to \
+         continue one or start something new."
+            .to_string(),
+    );
+
+    parts.join("\n\n")
 }

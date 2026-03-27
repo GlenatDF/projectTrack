@@ -6,10 +6,12 @@ use tauri::State;
 
 use crate::db::{
     self, AiPlanRun, AssembledPrompt, CreateProject, DashboardStats, ImportPlanResult,
-    MethodologyBlock, Project, ProjectDocument, ProjectPhase, ProjectPlan, ProjectTask,
-    ProjectScan, UpdateProject,
+    InProgressTask, MethodologyBlock, Project, ProjectDocument, ProjectPhase, ProjectPlan,
+    ProjectTask, ProjectScan, UpdateProject,
 };
+use serde::Serialize;
 use crate::git;
+use crate::scaffold::{self, ScaffoldRequest, ScaffoldResult};
 use crate::AppState;
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -402,6 +404,69 @@ pub fn run_claude_here(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Open VS Code at the given path and launch `claude` in its integrated terminal.
+/// Uses the `code` CLI to open the folder, then AppleScript to open the
+/// integrated terminal (Ctrl+`) and run `claude`.
+#[tauri::command]
+pub fn run_claude_in_vscode(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {path}"));
+    }
+
+    // Try to open VS Code via the `code` CLI so we know the exact process name.
+    let cli_candidates = [
+        "/usr/local/bin/code",
+        "/opt/homebrew/bin/code",
+        "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+    ];
+    let mut opened = false;
+    for candidate in &cli_candidates {
+        if Path::new(candidate).exists() {
+            if Command::new(candidate).arg(&path).spawn().is_ok() {
+                opened = true;
+                break;
+            }
+        }
+    }
+    if !opened {
+        // Fallback: plain `which code` — fast, no login shell.
+        if let Ok(out) = Command::new("which").arg("code").output() {
+            let bin = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !bin.is_empty() && Command::new(&bin).arg(&path).spawn().is_ok() {
+                opened = true;
+            }
+        }
+    }
+    if !opened {
+        return Err(
+            "VS Code CLI (code) not found. Install it via VS Code: Cmd+Shift+P → \
+             'Shell Command: Install code command in PATH'."
+                .to_string(),
+        );
+    }
+
+    // AppleScript: activate VS Code, wait for it to finish loading, then open
+    // the integrated terminal and type `claude`.
+    let script = "\
+tell application \"Visual Studio Code\" to activate\n\
+delay 2\n\
+tell application \"System Events\"\n\
+    tell process \"Code\"\n\
+        keystroke \"`\" using control down\n\
+        delay 0.8\n\
+        keystroke \"claude\"\n\
+        key code 36\n\
+    end tell\n\
+end tell";
+    Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Global bootstrap prompt used as the base for all projects.
 const GLOBAL_BOOTSTRAP_PROMPT: &str = "\
 You are helping me continue work on this project. Before touching any code, please:
@@ -789,12 +854,22 @@ pub fn update_task_status(
     status: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectTask, String> {
-    let valid = ["pending", "in_progress", "done", "skipped"];
+    let valid = ["pending", "in_progress", "paused", "blocked", "done", "skipped"];
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid task status: {status}"));
     }
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     db::update_task_status_record(&conn, task_id, &status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_task_progress_note(
+    task_id: i64,
+    note: String,
+    state: State<'_, AppState>,
+) -> Result<ProjectTask, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::update_task_progress_note_record(&conn, task_id, &note).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -818,4 +893,256 @@ pub fn get_ai_plan_runs(
 ) -> Result<Vec<AiPlanRun>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     db::fetch_ai_plan_runs(&conn, project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_in_progress_tasks(state: State<'_, AppState>) -> Result<Vec<InProgressTask>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::fetch_in_progress_tasks(&conn).map_err(|e| e.to_string())
+}
+
+// ── Claude session management ──────────────────────────────────────────────────
+
+/// The project opener prompt plus the session UUID that will be used.
+#[derive(Debug, Serialize)]
+pub struct OpenerPrompt {
+    pub prompt: String,
+    pub session_id: String,
+}
+
+/// A single turn in a Claude session: the response text and the active session UUID.
+#[derive(Debug, Serialize)]
+pub struct SessionTurn {
+    pub response: String,
+    pub session_id: String,
+}
+
+/// Return the assembled opener prompt and the current session UUID (if any).
+/// Returns an empty `session_id` when no session is active — does NOT auto-generate
+/// a new UUID, so this call is always side-effect-free.
+#[tauri::command]
+pub fn get_opener_prompt(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<OpenerPrompt, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let prompt = db::assemble_opener_prompt(&conn, project_id).map_err(|e| e.to_string())?;
+    let session_id: String = conn
+        .query_row(
+            "SELECT claude_session_id FROM projects WHERE id = ?1",
+            rusqlite::params![project_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(OpenerPrompt { prompt, session_id })
+}
+
+/// Start a brand-new Claude session: generate a fresh UUID, send the project opener
+/// via `claude --print --session-id <uuid>`, and return the response.
+/// Refuses if a session_id is already stored — caller must reset first.
+/// The DB lock is released before spawning the subprocess.
+#[tauri::command]
+pub fn start_claude_session(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<SessionTurn, String> {
+    let (session_id, repo_path, prompt) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        // Guard: refuse if a session is already active — use send_session_message to
+        // continue it, or reset_claude_session + start_claude_session for a fresh one.
+        let existing: String = conn
+            .query_row(
+                "SELECT claude_session_id FROM projects WHERE id = ?1",
+                rusqlite::params![project_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !existing.is_empty() {
+            return Err(format!(
+                "Session {} is already active. Use 'New Session' to reset it first.",
+                &existing[..8.min(existing.len())]
+            ));
+        }
+        let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
+        let prompt =
+            db::assemble_opener_prompt(&conn, project_id).map_err(|e| e.to_string())?;
+        let session_id =
+            db::ensure_project_session_id(&conn, project_id).map_err(|e| e.to_string())?;
+        (session_id, project.local_repo_path, prompt)
+    }; // DB lock released here
+
+    let response = invoke_claude(&session_id, &repo_path, &prompt, false)?;
+    Ok(SessionTurn { response, session_id })
+}
+
+/// Send a follow-up message in an existing Claude session.
+/// Uses --resume so the Claude CLI continues the existing conversation.
+#[tauri::command]
+pub fn send_session_message(
+    project_id: i64,
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<SessionTurn, String> {
+    let (session_id, repo_path) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
+        // Read the stored session ID — do NOT generate a new one here.
+        // If no session is active, the caller should have called start_claude_session first.
+        let session_id: String = conn
+            .query_row(
+                "SELECT claude_session_id FROM projects WHERE id = ?1",
+                rusqlite::params![project_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if session_id.is_empty() {
+            return Err("No active session. Start a session first.".to_string());
+        }
+        (session_id, project.local_repo_path)
+    };
+
+    let response = invoke_claude(&session_id, &repo_path, &message, true)?;
+    Ok(SessionTurn { response, session_id })
+}
+
+/// Clear the stored session UUID. The next `start_claude_session` call will
+/// generate a fresh UUID, beginning a new Claude conversation.
+#[tauri::command]
+pub fn reset_claude_session(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::clear_project_session_id(&conn, project_id).map_err(|e| e.to_string())
+}
+
+/// Spawn `claude --print` with the given prompt via stdin.
+///
+/// `resume` controls the session flag:
+///   - `false` (new session):  `--session-id <uuid>`  — creates a session with this ID
+///   - `true`  (follow-up):    `--resume <uuid>`       — continues the existing session
+///
+/// CWD is set to the project repo directory if it exists; falls back to $HOME.
+/// Tries common install locations if `claude` is not on PATH.
+fn invoke_claude(session_id: &str, repo_path: &str, prompt: &str, resume: bool) -> Result<String, String> {
+    let cwd = if !repo_path.is_empty() && Path::new(repo_path).exists() {
+        repo_path.to_string()
+    } else {
+        std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
+    };
+
+    let path = augmented_path();
+    let candidates = [
+        "claude",
+        "/usr/local/bin/claude",
+        "/opt/homebrew/bin/claude",
+        "/usr/bin/claude",
+    ];
+
+    let mut last_err = String::new();
+    for candidate in &candidates {
+        let session_flag = if resume { "--resume" } else { "--session-id" };
+        match Command::new(candidate)
+            .arg("--print")
+            .arg(session_flag)
+            .arg(session_id)
+            .current_dir(&cwd)
+            .env("PATH", &path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin.write_all(prompt.as_bytes()).map_err(|e| e.to_string())?;
+                }
+                let out = child.wait_with_output().map_err(|e| e.to_string())?;
+                if out.status.success() {
+                    return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+                }
+                return Err(format!(
+                    "Claude CLI error:\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                ));
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+
+    Err(format!(
+        "Claude CLI not found. Install with:\n  npm install -g @anthropic-ai/claude-code\n\n({last_err})"
+    ))
+}
+
+// ── App settings ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_settings(
+    state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_all_settings(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_setting(
+    key: String,
+    value: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let allowed = ["projects_dir", "vercel_token", "supabase_access_token", "supabase_org_id"];
+    if !allowed.contains(&key.as_str()) {
+        return Err(format!("Unknown setting key: {key}"));
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
+}
+
+// ── Scaffold ───────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn check_gh_cli() -> bool {
+    scaffold::check_gh_cli(&augmented_path())
+}
+
+#[tauri::command]
+pub fn scaffold_new_project(
+    project_name: String,
+    description: String,
+    create_github: bool,
+    create_vercel: bool,
+    create_supabase: bool,
+    state: State<'_, AppState>,
+) -> Result<ScaffoldResult, String> {
+    // Read settings (needs lock only briefly)
+    let (projects_dir, vercel_token, supabase_token, supabase_org_id) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let projects_dir = db::get_setting(&conn, "projects_dir").map_err(|e| e.to_string())?;
+        let vercel_token = db::get_setting(&conn, "vercel_token").map_err(|e| e.to_string())?;
+        let supabase_token =
+            db::get_setting(&conn, "supabase_access_token").map_err(|e| e.to_string())?;
+        let supabase_org_id =
+            db::get_setting(&conn, "supabase_org_id").map_err(|e| e.to_string())?;
+        (projects_dir, vercel_token, supabase_token, supabase_org_id)
+    };
+
+    if projects_dir.is_empty() {
+        return Err("No default projects directory configured. Set one in Settings.".to_string());
+    }
+
+    let result = scaffold::scaffold_project(ScaffoldRequest {
+        project_name,
+        description,
+        projects_dir,
+        create_github,
+        create_vercel,
+        create_supabase,
+        vercel_token,
+        supabase_token,
+        supabase_org_id,
+        path_env: augmented_path(),
+    });
+
+    Ok(result)
 }

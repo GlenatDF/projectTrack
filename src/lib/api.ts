@@ -1,11 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   AiPlanRun,
+  AppSettings,
   AssembledPrompt,
   DashboardStats,
   DiscoveredRepo,
   ImportPlanResult,
+  InProgressTask,
   MethodologyBlock,
+  OpenerPrompt,
   Project,
   ProjectDocument,
   ProjectFormData,
@@ -13,6 +16,8 @@ import type {
   ProjectPlan,
   ProjectScan,
   ProjectTask,
+  ScaffoldResult,
+  SessionTurn,
 } from './types';
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -71,6 +76,9 @@ export const openInIterm = (path: string): Promise<void> =>
 
 export const runClaudeHere = (path: string): Promise<void> =>
   invoke('run_claude_here', { path });
+
+export const runClaudeInVscode = (path: string): Promise<void> =>
+  invoke('run_claude_in_vscode', { path });
 
 /** Open Claude in a terminal at the project's repo path and copy the bootstrap prompt to clipboard. */
 export const runClaudeBootstrap = (projectId: number): Promise<string> =>
@@ -170,6 +178,12 @@ export const updateTaskStatus = (
 ): Promise<ProjectTask> =>
   invoke('update_task_status', { taskId, status });
 
+export const updateTaskProgressNote = (
+  taskId: number,
+  note: string,
+): Promise<ProjectTask> =>
+  invoke('update_task_progress_note', { taskId, note });
+
 export const updatePhaseStatus = (
   phaseId: number,
   status: string,
@@ -178,3 +192,45 @@ export const updatePhaseStatus = (
 
 export const getAiPlanRuns = (projectId: number): Promise<AiPlanRun[]> =>
   invoke('get_ai_plan_runs', { projectId });
+
+export const getInProgressTasks = (): Promise<InProgressTask[]> =>
+  invoke('get_in_progress_tasks');
+
+// ── Claude session ─────────────────────────────────────────────────────────────
+
+export const getOpenerPrompt = (projectId: number): Promise<OpenerPrompt> =>
+  invoke('get_opener_prompt', { projectId });
+
+export const startClaudeSession = (projectId: number): Promise<SessionTurn> =>
+  invoke('start_claude_session', { projectId });
+
+export const sendSessionMessage = (
+  projectId: number,
+  message: string,
+): Promise<SessionTurn> =>
+  invoke('send_session_message', { projectId, message });
+
+export const resetClaudeSession = (projectId: number): Promise<void> =>
+  invoke('reset_claude_session', { projectId });
+
+// ── Settings ───────────────────────────────────────────────────────────────────
+
+export const getSettings = (): Promise<Record<string, string>> =>
+  invoke('get_settings');
+
+export const updateSetting = (key: keyof AppSettings, value: string): Promise<void> =>
+  invoke('update_setting', { key, value });
+
+// ── Scaffold ───────────────────────────────────────────────────────────────────
+
+export const checkGhCli = (): Promise<boolean> =>
+  invoke('check_gh_cli');
+
+export const scaffoldNewProject = (params: {
+  projectName: string;
+  description: string;
+  createGithub: boolean;
+  createVercel: boolean;
+  createSupabase: boolean;
+}): Promise<ScaffoldResult> =>
+  invoke('scaffold_new_project', params);

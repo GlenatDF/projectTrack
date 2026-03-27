@@ -142,7 +142,7 @@ export const ALL_AI_TOOLS: AiTool[] = ['claude', 'chatgpt', 'both', 'other'];
 // ── Planning types ─────────────────────────────────────────────────────────────
 
 export type DocStatus = 'draft' | 'reviewed' | 'final';
-export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'skipped';
+export type TaskStatus = 'pending' | 'in_progress' | 'paused' | 'blocked' | 'done' | 'skipped';
 export type PhaseStatus = 'pending' | 'in_progress' | 'done' | 'skipped';
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type TaskCategory =
@@ -198,6 +198,10 @@ export interface ProjectTask {
   ai_generated: boolean;
   user_modified: boolean;
   created_at: string;
+  progress_note: string;
+  started_at: string | null;
+  completed_at: string | null;
+  last_worked_at: string | null;
 }
 
 export interface ProjectRisk {
@@ -236,6 +240,16 @@ export interface AiPlanRun {
   created_at: string;
 }
 
+/** A planning task currently marked in_progress, with project context. */
+export interface InProgressTask {
+  id: number;
+  project_id: number;
+  project_name: string;
+  title: string;
+  category: string;
+  status: TaskStatus;
+}
+
 export interface ImportPlanResult {
   phases_imported: number;
   tasks_imported: number;
@@ -256,17 +270,56 @@ export interface ProjectPlan {
   assumptions: ProjectAssumption[];
 }
 
+// ── Claude session types ───────────────────────────────────────────────────────
+
+export interface OpenerPrompt {
+  prompt: string;
+  session_id: string;
+}
+
+export interface SessionTurn {
+  response: string;
+  session_id: string;
+}
+
+// ── Scaffold types ─────────────────────────────────────────────────────────────
+
+export interface ScaffoldStep {
+  label: string;
+  /** "ok" | "error" | "skipped" */
+  status: string;
+  detail: string | null;
+}
+
+export interface ScaffoldResult {
+  project_path: string;
+  slug: string;
+  github_url: string | null;
+  vercel_project_url: string | null;
+  supabase_project_id: string | null;
+  supabase_db_password: string | null;
+  steps: ScaffoldStep[];
+}
+
+export interface AppSettings {
+  projects_dir?: string;
+  vercel_token?: string;
+  supabase_access_token?: string;
+  supabase_org_id?: string;
+}
+
 // ── Planning display helpers ───────────────────────────────────────────────────
 
 export const DOC_TYPE_LABELS: Record<string, string> = {
-  brief:           'Project Brief',
-  prd:             'Product Requirements',
-  tech_spec:       'Technical Specification',
-  ai_instructions: 'AI Instructions',
-  risks:           'Risks / Assumptions / Dependencies',
-  decisions:       'Decision Log',
-  handoff:         'Session Handoff',
-  scratchpad:      'Scratchpad',
+  brief:            'Project Brief',
+  prd:              'Product Requirements',
+  tech_spec:        'Technical Specification',
+  ai_instructions:  'AI Instructions',
+  risks:            'Risks / Assumptions / Dependencies',
+  decisions:        'Decision Log',
+  handoff:          'Session Handoff',
+  scratchpad:       'Scratchpad',
+  operating_standard: 'Operating Standard',
 };
 
 export const TASK_CATEGORY_COLORS: Record<TaskCategory, string> = {

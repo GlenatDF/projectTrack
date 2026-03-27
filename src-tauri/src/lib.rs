@@ -4,13 +4,46 @@ use tauri::Manager;
 mod commands;
 mod db;
 mod git;
+mod scaffold;
 
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
 }
 
+/// Install a panic hook that appends crash info to errors.log in the app data
+/// directory before deferring to the default hook (which prints to stderr).
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let entry = format!("\n=== PANIC ===\nLocation: {location}\n{info}\n");
+
+        if let Ok(home) = std::env::var("HOME") {
+            let log_path = format!(
+                "{}/Library/Application Support/com.glen.projecttracker/errors.log",
+                home
+            );
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+            {
+                let _ = f.write_all(entry.as_bytes());
+            }
+        }
+
+        prev(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_hook();
+
     tauri::Builder::default()
         .setup(|app| {
             // Use the platform's standard app-data directory so the DB persists
@@ -51,6 +84,7 @@ pub fn run() {
             commands::open_in_terminal,
             commands::open_in_iterm,
             commands::run_claude_here,
+            commands::run_claude_in_vscode,
             commands::run_claude_bootstrap,
             commands::copy_bootstrap_prompt,
             commands::run_git_status,
@@ -72,8 +106,21 @@ pub fn run() {
             commands::run_plan_with_claude_cli,
             commands::get_project_plan,
             commands::update_task_status,
+            commands::update_task_progress_note,
             commands::update_phase_status,
             commands::get_ai_plan_runs,
+            commands::get_in_progress_tasks,
+            // Claude session
+            commands::get_opener_prompt,
+            commands::start_claude_session,
+            commands::send_session_message,
+            commands::reset_claude_session,
+            // Settings
+            commands::get_settings,
+            commands::update_setting,
+            // Scaffold
+            commands::check_gh_cli,
+            commands::scaffold_new_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
