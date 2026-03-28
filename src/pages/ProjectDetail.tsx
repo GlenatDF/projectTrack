@@ -3,14 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Edit2, Trash2, RefreshCw, FolderOpen, Code2,
   AlertCircle, CheckCircle2, PauseCircle, GitBranch, Link2,
-  Loader2, Terminal, Bot, Sparkles, X, Copy,
+  Loader2, Terminal, Sparkles, X, Copy,
 } from 'lucide-react';
 import type { Project, ProjectScan } from '../lib/types';
 import {
   getProject, getProjectScans, scanProject, updateProject,
   updateProjectStatus, deleteProject, openFolder, openInVscode,
   relinkRepoPath, validateRepoPath,
-  openInTerminal, openInIterm, runClaudeInVscode, runClaudeBootstrap,
+  openInTerminal, openInIterm, runClaudeBootstrap,
   copyBootstrapPrompt,
   runGitStatus, isItermAvailable,
 } from '../lib/api';
@@ -175,12 +175,6 @@ export default function ProjectDetail() {
   async function handleOpenIterm() {
     if (!project?.local_repo_path) return;
     try { await openInIterm(project.local_repo_path); }
-    catch (e) { setActionError(String(e)); }
-  }
-
-  async function handleRunClaudeInVscode() {
-    if (!project?.local_repo_path) return;
-    try { await runClaudeInVscode(project.local_repo_path); }
     catch (e) { setActionError(String(e)); }
   }
 
@@ -492,12 +486,10 @@ export default function ProjectDetail() {
                           <ActionBtn icon={Terminal} label="Open in iTerm" onClick={handleOpenIterm}
                             cls="text-teal-400 hover:bg-teal-500/10" />
                         )}
-                        <ActionBtn icon={Bot} label="Claude in VS Code" onClick={handleRunClaudeInVscode}
-                          cls="text-violet-400 hover:bg-violet-500/10" />
                         <ActionBtn icon={Sparkles} label="Claude + Bootstrap" onClick={handleClaudeBootstrap}
                           cls="text-violet-300 hover:bg-violet-500/10" />
                         <ActionBtn icon={Copy} label="Copy Bootstrap Prompt" onClick={handleCopyBootstrap}
-                          cls="text-violet-400/70 hover:bg-violet-500/10" />
+                          cls="text-violet-400 hover:bg-violet-500/10" />
                         <button
                           onClick={handleGitStatus}
                           disabled={gitStatusLoading}

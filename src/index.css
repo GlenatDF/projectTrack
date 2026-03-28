@@ -20,15 +20,16 @@
 }
 
 :root[data-theme="light"] {
-  --color-base:             #f0f2f5;
-  --color-surface:          #e8ebf0;
-  --color-panel:            #dde3ed;
+  /* Slightly warmed neutrals — removes the cool blue-gray tint */
+  --color-base:             #f2f0ec;
+  --color-surface:          #eae7e2;
+  --color-panel:            #dedad5;
   --color-card:             #ffffff;
-  --color-hover:            #e2e8f2;
-  --color-border:           #c4cedf;
-  --color-border-subtle:    #d0d8e8;
-  --color-scrollbar:        #c4cedf;
-  --color-scrollbar-hover:  #a0aec0;
+  --color-hover:            #e3dfd9;
+  --color-border:           #c8c2b8;
+  --color-border-subtle:    #d3cec7;
+  --color-scrollbar:        #c8c2b8;
+  --color-scrollbar-hover:  #a09890;
   --color-select-option-bg: #ffffff;
   --color-select-option-fg: #1e293b;
 }
@@ -85,6 +86,52 @@ input, textarea, [data-selectable] {
 :root[data-theme="light"] .text-slate-600 {
   color: #334155; /* slate-700 */
 }
+
+/* ── Light mode: chromatic text color overrides ───────────────────────────── */
+/* Pastel text classes (-300, -400) are designed for dark backgrounds.
+   Override them to their -700 equivalents for sufficient contrast on light surfaces. */
+
+:root[data-theme="light"] .text-violet-300,
+:root[data-theme="light"] .text-violet-400 { color: #6d28d9; } /* violet-700 */
+
+:root[data-theme="light"] .text-purple-300,
+:root[data-theme="light"] .text-purple-400 { color: #7e22ce; } /* purple-700 */
+
+:root[data-theme="light"] .text-blue-300,
+:root[data-theme="light"] .text-blue-400   { color: #1d4ed8; } /* blue-700 */
+
+:root[data-theme="light"] .text-cyan-300,
+:root[data-theme="light"] .text-cyan-400   { color: #0e7490; } /* cyan-700 */
+
+:root[data-theme="light"] .text-teal-300,
+:root[data-theme="light"] .text-teal-400   { color: #0f766e; } /* teal-700 */
+
+:root[data-theme="light"] .text-green-300,
+:root[data-theme="light"] .text-green-400,
+:root[data-theme="light"] .text-green-500  { color: #15803d; } /* green-700 */
+
+:root[data-theme="light"] .text-yellow-300,
+:root[data-theme="light"] .text-yellow-400,
+:root[data-theme="light"] .text-yellow-500 { color: #a16207; } /* yellow-700 */
+
+:root[data-theme="light"] .text-amber-300,
+:root[data-theme="light"] .text-amber-400,
+:root[data-theme="light"] .text-amber-500  { color: #b45309; } /* amber-700 */
+
+:root[data-theme="light"] .text-orange-300,
+:root[data-theme="light"] .text-orange-400 { color: #c2410c; } /* orange-700 */
+
+:root[data-theme="light"] .text-pink-300,
+:root[data-theme="light"] .text-pink-400   { color: #be185d; } /* pink-700 */
+
+:root[data-theme="light"] .text-rose-300,
+:root[data-theme="light"] .text-rose-400   { color: #be123c; } /* rose-700 */
+
+:root[data-theme="light"] .text-red-300,
+:root[data-theme="light"] .text-red-400    { color: #b91c1c; } /* red-700 */
+
+:root[data-theme="light"] .text-gray-300,
+:root[data-theme="light"] .text-gray-400   { color: #374151; } /* gray-700 */
 
 /* ── Light mode: background overrides ─────────────────────────────────────── */
 

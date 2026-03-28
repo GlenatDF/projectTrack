@@ -151,7 +151,7 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
                 <AlertTriangle size={13} className="text-blue-400 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-blue-300 text-xs font-medium mb-1">Existing plan detected</p>
-                  <p className="text-blue-400/80 text-xs">
+                  <p className="text-blue-400 text-xs">
                     Importing a new plan will replace all AI-generated phases, tasks, risks, and
                     assumptions. Tasks you've marked as done will be preserved.
                   </p>

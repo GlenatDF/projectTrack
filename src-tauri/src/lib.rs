@@ -4,6 +4,7 @@ use tauri::Manager;
 mod commands;
 mod db;
 mod git;
+mod project_init;
 mod scaffold;
 
 pub struct AppState {
@@ -84,7 +85,6 @@ pub fn run() {
             commands::open_in_terminal,
             commands::open_in_iterm,
             commands::run_claude_here,
-            commands::run_claude_in_vscode,
             commands::run_claude_bootstrap,
             commands::copy_bootstrap_prompt,
             commands::run_git_status,
@@ -121,6 +121,8 @@ pub fn run() {
             // Scaffold
             commands::check_gh_cli,
             commands::scaffold_new_project,
+            // Project init
+            commands::init_new_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

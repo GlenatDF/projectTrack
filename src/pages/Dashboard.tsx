@@ -16,6 +16,7 @@ import { Button } from '../components/ui/Button';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { relativeTime, projectTimestampLabel, loadPref, savePref } from '../lib/utils';
 import { computeHealth, isOlderThanDays } from '../lib/health';
+import { NewProjectWizard } from '../components/NewProjectWizard';
 
 const STATUS_OPTIONS = ['all', 'active', 'blocked', 'paused', 'done'] as const;
 const STATUS_PILL_LABELS: Record<string, string> = {
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState<'updated_at' | 'last_scanned_at' | 'priority' | 'name'>(
     () => loadPref('pt:dash:sort', 'updated_at')
   );
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   async function load() {
     try {
@@ -135,7 +137,7 @@ export default function Dashboard() {
         {isScanning ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
         Scan All
       </Button>
-      <Button variant="primary" size="sm" onClick={() => navigate('/projects/new')}>
+      <Button variant="primary" size="sm" onClick={() => setWizardOpen(true)}>
         <Plus size={12} />
         New Project
       </Button>
@@ -146,7 +148,13 @@ export default function Dashboard() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader title="Dashboard" subtitle={subtitle} actions={headerActions} />
       <div className="flex-1 overflow-y-auto">
-        {loading ? (
+        <NewProjectWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onCreated={(id) => { setWizardOpen(false); load(); navigate(`/projects/${id}`); }}
+      />
+
+      {loading ? (
           <Spinner />
         ) : error ? (
           <div className="px-5 py-4 max-w-5xl mx-auto">
@@ -335,7 +343,7 @@ export default function Dashboard() {
                                 <span className="text-[10px] font-medium text-red-400">⊘ blocked</span>
                               )}
                               {isStale && (
-                                <span className="text-[10px] text-orange-400/80">
+                                <span className="text-[10px] text-orange-400">
                                   {isBlocked ? '· ' : ''}stale {relativeTime(p.last_scanned_at)}
                                 </span>
                               )}
@@ -348,7 +356,7 @@ export default function Dashboard() {
                 ) : allProjects.length > 0 ? (
                   /* All-clear state */
                   <div className="bg-card border border-border rounded-lg px-3 py-2.5 flex items-center gap-2">
-                    <CheckCircle2 size={11} className="text-green-400/70 shrink-0" />
+                    <CheckCircle2 size={11} className="text-green-400 shrink-0" />
                     <span className="text-[11px] text-slate-700">No blocked or stale projects</span>
                   </div>
                 ) : null}

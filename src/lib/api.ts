@@ -12,6 +12,8 @@ import type {
   Project,
   ProjectDocument,
   ProjectFormData,
+  ProjectInitRequest,
+  ProjectInitResult,
   ProjectPhase,
   ProjectPlan,
   ProjectScan,
@@ -76,9 +78,6 @@ export const openInIterm = (path: string): Promise<void> =>
 
 export const runClaudeHere = (path: string): Promise<void> =>
   invoke('run_claude_here', { path });
-
-export const runClaudeInVscode = (path: string): Promise<void> =>
-  invoke('run_claude_in_vscode', { path });
 
 /** Open Claude in a terminal at the project's repo path and copy the bootstrap prompt to clipboard. */
 export const runClaudeBootstrap = (projectId: number): Promise<string> =>
@@ -220,6 +219,11 @@ export const getSettings = (): Promise<Record<string, string>> =>
 
 export const updateSetting = (key: keyof AppSettings, value: string): Promise<void> =>
   invoke('update_setting', { key, value });
+
+// ── Project init ───────────────────────────────────────────────────────────────
+
+export const initNewProject = (config: ProjectInitRequest): Promise<ProjectInitResult> =>
+  invoke('init_new_project', { config });
 
 // ── Scaffold ───────────────────────────────────────────────────────────────────
 

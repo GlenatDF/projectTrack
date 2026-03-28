@@ -98,6 +98,29 @@ export interface ProjectFormData {
   preferred_terminal: string;
 }
 
+// ── Project init ──────────────────────────────────────────────────────────────
+
+/** Matches ProjectInitRequest in project_init.rs — fields are snake_case */
+export interface ProjectInitRequest {
+  name: string;
+  description: string;
+  project_type: string;
+  main_goal: string;
+  starter_template: string;
+  add_ons: string[];
+  constraints: string;
+  coding_style: string;
+  ui_style: string;
+  create_git_repo: boolean;
+  create_claude_skills: boolean;
+}
+
+export interface ProjectInitResult {
+  project_id: number;
+  project_path: string;
+  files_created: string[];
+}
+
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 export const STATUS_LABELS: Record<Status, string> = {

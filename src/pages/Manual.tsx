@@ -5,18 +5,22 @@ import {
   Bot, Sparkles, FileText, GitBranch, AlertTriangle,
   Download, Activity, CheckCircle2, BarChart3,
   HelpCircle, XCircle, Circle, Star, ClipboardList, ShieldAlert,
+  MessageSquare, Wrench, Wand2, FlaskConical,
 } from 'lucide-react';
 
 /* ── Section definitions ──────────────────────────────────────────── */
 const sections = [
-  { id: 'overview',       label: 'Overview' },
-  { id: 'dashboard',      label: 'Dashboard' },
-  { id: 'projects',       label: 'Projects' },
-  { id: 'project-detail', label: 'Project Detail' },
-  { id: 'planning',       label: 'Planning' },
-  { id: 'discover',       label: 'Discover' },
-  { id: 'settings',       label: 'Settings' },
-  { id: 'reference',      label: 'Reference' },
+  { id: 'overview',          label: 'Overview' },
+  { id: 'dashboard',         label: 'Dashboard' },
+  { id: 'new-project',       label: 'New Project' },
+  { id: 'projects',          label: 'Projects' },
+  { id: 'project-detail',    label: 'Project Detail' },
+  { id: 'planning',          label: 'Planning' },
+  { id: 'session',           label: 'Claude Session' },
+  { id: 'discover',          label: 'Discover' },
+  { id: 'settings',          label: 'Settings' },
+  { id: 'testing-standard',  label: 'Testing Standard' },
+  { id: 'reference',         label: 'Reference' },
 ];
 
 /* ── Small reusable pieces ────────────────────────────────────────── */
@@ -210,6 +214,80 @@ export default function Manual() {
             </Card>
           </section>
 
+          {/* ─── New Project Wizard ───────── */}
+          <section className="mb-8">
+            <SectionHeading
+              id="new-project"
+              icon={Wand2}
+              title="New Project Wizard"
+              subtitle="Create a Claude-ready project with docs, skills, and structure"
+            />
+            <Card className="mb-3">
+              <p className="text-xs text-slate-500 mb-3">
+                Click <strong className="text-slate-300">+ New Project</strong> on the Dashboard to open
+                the wizard. It walks you through three steps, then generates a full project folder on disk —
+                complete with structured markdown docs and optional Claude skills files.
+              </p>
+              <SubHeading>Steps</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={CheckCircle2} label="1. About" desc="Project name (required), short description, project type (Web app / Desktop app / API / Internal tool / Docs site), and main goal." iconColor="text-green-400" />
+                <FeatureRow icon={CheckCircle2} label="2. Setup" desc="Starter template (Next.js, Tauri, React, Blank, Docs site), stack add-ons (Supabase, Tailwind CSS, Stripe, etc.), and any key constraints." iconColor="text-blue-400" />
+                <FeatureRow icon={CheckCircle2} label="3. Options" desc="Preferred coding style, UI style, whether to initialise a Git repo, and whether to generate Claude skill files." iconColor="text-violet-400" />
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                The <strong className="text-slate-300">Default projects directory</strong> must be set in
+                Settings → Integrations &amp; Scaffold before the wizard can create a folder.
+                If it is missing, the wizard will warn you with a link to Settings.
+              </p>
+            </Card>
+            <Card className="mb-3">
+              <SubHeading>Generated markdown docs — 11 files</SubHeading>
+              <p className="text-xs text-slate-500 mb-3">
+                All docs are pre-populated with your project name, description, template, add-ons, and goal.
+                They are living documents — keep them updated as the project evolves.
+              </p>
+              <div className="grid grid-cols-1 gap-0">
+                {[
+                  ['CLAUDE.md',                         'Claude Code context, stack, working preferences, and testing standard'],
+                  ['PROJECT_BRIEF.md',                  'One-page overview — goal, audience, scope, success criteria'],
+                  ['PRODUCT_REQUIREMENTS.md',           'Functional requirements, user flows, and acceptance criteria'],
+                  ['TECHNICAL_SPEC.md',                 'Architecture, components, data model, and API contracts'],
+                  ['TASKS.md',                          'Phase-based task list — keep current throughout development'],
+                  ['DECISION_LOG.md',                   'Key decisions with context, options considered, and rationale'],
+                  ['SESSION_LOG.md',                    'Brief notes from each working session'],
+                  ['RISKS_ASSUMPTIONS_DEPENDENCIES.md', 'Known risks, assumptions, and add-on dependencies'],
+                  ['PROJECT_STAGE.md',                  'Stage reference table — track current phase of the project'],
+                  ['PROJECT_START_PROMPT.md',           'Starter prompt to give Claude at the top of a new session'],
+                  ['README.md',                         'Public-facing intro with stack info and setup instructions'],
+                ].map(([name, desc]) => (
+                  <div key={name} className="flex items-start gap-2.5 py-1.5 border-b border-border-subtle last:border-0">
+                    <FileText size={11} className="text-slate-600 shrink-0 mt-0.5" />
+                    <div>
+                      <code className="text-[11px] font-mono text-slate-300">{name}</code>
+                      <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card>
+              <SubHeading>Generated Claude skills — 7 files in .claude/skills/</SubHeading>
+              <p className="text-xs text-slate-500 mb-3">
+                Skill files are plain markdown. Claude Code reads them when you invoke the skill by name.
+                All 7 are generated when <strong className="text-slate-300">Generate Claude skills</strong> is enabled in step 3.
+              </p>
+              <div className="space-y-0">
+                <FeatureRow icon={Bot}          label="project-kickoff"     desc="Read project docs and propose a scoped task plan before writing any code." iconColor="text-violet-400" />
+                <FeatureRow icon={ClipboardList} label="task-planning"       desc="Break features into safe, reviewable steps. Resolve unknowns before committing to a plan." iconColor="text-slate-400" />
+                <FeatureRow icon={ShieldAlert}  label="safe-feature-build"  desc="Before/during/after checklist for building features without breaking existing behaviour." iconColor="text-amber-400" />
+                <FeatureRow icon={FileText}     label="update-decision-log" desc="Log architectural decisions with context, options considered, and rationale." iconColor="text-slate-400" />
+                <FeatureRow icon={RefreshCw}    label="doc-maintenance"     desc="Keep living docs in sync — what to update and when after each session." iconColor="text-cyan-400" />
+                <FeatureRow icon={Wrench}       label="ui-readability"      desc="Readability, contrast, and visual warmth checklist for UI work." iconColor="text-blue-400" />
+                <FeatureRow icon={Plus}         label="testing-discipline"  desc="Honest testing reporting — distinguishes build checks, manual testing, and automated tests." iconColor="text-green-400" />
+              </div>
+            </Card>
+          </section>
+
           {/* ─── Projects ─────────────────── */}
           <section className="mb-8">
             <SectionHeading
@@ -230,6 +308,22 @@ export default function Manual() {
                 <FeatureRow icon={CheckCircle2} label="Local repo path" desc="Absolute path to the folder on disk (optional — can be linked later)." iconColor="text-slate-500" />
                 <FeatureRow icon={CheckCircle2} label="Status / Phase / Priority / AI tool" desc="Metadata fields for filtering and tracking." iconColor="text-slate-500" />
               </div>
+            </Card>
+            <Card className="mb-3">
+              <SubHeading>Scaffold from scratch</SubHeading>
+              <p className="text-xs text-slate-500 mb-2">
+                When creating a new project, enable <strong className="text-slate-300">Create from scratch</strong>{' '}
+                to scaffold a full Next.js 15 + TypeScript + Tailwind v4 + Supabase starter. Project Tracker will:
+              </p>
+              <div className="space-y-0">
+                <FeatureRow icon={Sparkles} label="Generate boilerplate" desc="Creates package.json, tsconfig, next.config, Tailwind, Supabase helpers, middleware, and env files." iconColor="text-amber-400" />
+                <FeatureRow icon={GitBranch} label="Git init + commit" desc="Runs git init and makes an initial commit automatically." iconColor="text-cyan-400" />
+                <FeatureRow icon={CheckCircle2} label="GitHub / Vercel / Supabase" desc="Optionally creates a GitHub repo (requires gh CLI), deploys to Vercel, and provisions a Supabase project. Tokens must be set in Settings first." iconColor="text-slate-400" />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                The default projects directory must be set in{' '}
+                <strong className="text-slate-300">Settings → Integrations &amp; Scaffold</strong> before scaffolding.
+              </p>
             </Card>
             <Card>
               <SubHeading>Filtering &amp; sorting</SubHeading>
@@ -255,17 +349,18 @@ export default function Manual() {
               id="project-detail"
               icon={Activity}
               title="Project Detail"
-              subtitle="Four-tab deep-dive into a single project"
+              subtitle="Five-tab deep-dive into a single project"
             />
             <Card className="mb-3">
-              <SubHeading>Overview tab</SubHeading>
+              <SubHeading>Overview tab — actions</SubHeading>
               <div className="space-y-0">
                 <FeatureRow icon={RefreshCw} label="Scan" desc="Runs a git scan on the linked repo to capture commit history, dirty state, and branch name." iconColor="text-cyan-400" />
-                <FeatureRow icon={FolderOpen} label="Open folder" desc="Opens the repo directory in Finder." iconColor="text-slate-400" />
-                <FeatureRow icon={Code2} label="Open in VS Code" desc="Opens the repo in VS Code." iconColor="text-blue-400" />
+                <FeatureRow icon={FolderOpen} label="Open in Finder" desc="Opens the repo directory in Finder." iconColor="text-slate-400" />
+                <FeatureRow icon={Code2} label="Open in Editor" desc="Opens the repo in your installed editor — tries VS Code, Cursor, Windsurf, Zed, BBEdit, and Sublime Text." iconColor="text-blue-400" />
                 <FeatureRow icon={Terminal} label="Open in Terminal / iTerm" desc="Opens a terminal session in the repo folder. Uses iTerm if available." iconColor="text-green-400" />
                 <FeatureRow icon={Bot} label="Run Claude here" desc="Opens Claude Code in the terminal at the repo folder." iconColor="text-violet-400" />
-                <FeatureRow icon={Sparkles} label="Claude bootstrap" desc="Generates a project-context prompt and optionally launches Claude with it pre-loaded." iconColor="text-amber-400" />
+                <FeatureRow icon={Sparkles} label="Claude + Bootstrap" desc="Launches Claude in the terminal and pre-loads a project-context prompt." iconColor="text-amber-400" />
+                <FeatureRow icon={ClipboardList} label="Copy Bootstrap Prompt" desc="Copies the bootstrap prompt to clipboard so you can paste it into any AI." iconColor="text-slate-400" />
               </div>
             </Card>
             <Card className="mb-3">
@@ -301,13 +396,13 @@ export default function Manual() {
             <Card className="mb-3">
               <SubHeading>Docs tab</SubHeading>
               <p className="text-xs text-slate-500 mb-3">
-                Every project is auto-scaffolded with 8 living documents when it is created:
+                Every project is auto-scaffolded with 9 living documents when it is created:
               </p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-0 text-xs text-slate-400 mb-3">
                 {[
-                  'Project Brief', 'Architecture Notes', 'Decision Log',
-                  'Implementation Notes', 'Testing Plan', 'Deployment Runbook',
-                  'Retrospective', 'Claude Instructions',
+                  'Project Brief', 'Product Requirements', 'Technical Specification',
+                  'AI Instructions', 'Risks / Assumptions', 'Decision Log',
+                  'Session Handoff', 'Scratchpad', 'Operating Standard',
                 ].map(d => (
                   <div key={d} className="flex items-center gap-1.5 py-1 border-b border-border-subtle">
                     <FileText size={11} className="text-slate-600 shrink-0" />
@@ -347,11 +442,15 @@ export default function Manual() {
               </p>
             </Card>
             <Card>
-              <SubHeading>Tasks tab (Plan)</SubHeading>
+              <SubHeading>Plan tab — phases &amp; tasks</SubHeading>
               <div className="space-y-0">
                 <FeatureRow icon={ClipboardList} label="Phases" desc="Top-level milestones. Each phase has an ordered list of tasks. Mark phases done when all tasks complete." iconColor="text-violet-400" />
-                <FeatureRow icon={CheckCircle2} label="Tasks" desc="Leaf-level work items. Toggle between pending / in-progress / done by clicking the status icon." iconColor="text-green-400" />
+                <FeatureRow icon={CheckCircle2} label="Tasks" desc="Click the status icon to cycle: pending → in-progress → paused → done → pending. Blocked tasks go directly back to in-progress when clicked." iconColor="text-green-400" />
               </div>
+              <p className="text-xs text-slate-500 mt-2">
+                When a task is in-progress or paused, a <strong className="text-slate-300">progress note</strong> field
+                appears automatically — jot down where you left off. Notes are saved on blur.
+              </p>
               <div className="mt-3 pt-1">
                 <SubHeading>Risks tab</SubHeading>
                 <div className="space-y-0">
@@ -359,6 +458,52 @@ export default function Manual() {
                   <FeatureRow icon={AlertTriangle} label="Assumptions" desc="Captured assumptions from the plan response. Review and validate as the project progresses." iconColor="text-amber-400" />
                 </div>
               </div>
+            </Card>
+          </section>
+
+          {/* ─── Claude Session ───────────── */}
+          <section className="mb-8">
+            <SectionHeading
+              id="session"
+              icon={MessageSquare}
+              title="Claude Session"
+              subtitle="Persistent AI conversation tied to a project"
+            />
+            <Card className="mb-3">
+              <p className="text-xs text-slate-500 mb-3">
+                The <strong className="text-slate-300">Session tab</strong> (5th tab in Project Detail) lets you
+                run a persistent Claude conversation scoped to the project. Sessions are stored in the database
+                and can be resumed across app launches.
+              </p>
+              <div className="space-y-0">
+                <FeatureRow
+                  icon={Sparkles}
+                  label="Opener prompt"
+                  desc="The first message is auto-assembled from your project metadata, active tasks, and upcoming work — giving Claude full context before you type anything."
+                  iconColor="text-amber-400"
+                />
+                <FeatureRow
+                  icon={MessageSquare}
+                  label="Send messages"
+                  desc="Type follow-up messages and they are sent via `claude --resume` to continue the same session thread."
+                  iconColor="text-violet-400"
+                />
+                <FeatureRow
+                  icon={RefreshCw}
+                  label="New Session"
+                  desc="Click New Session to clear the session ID and start fresh. The previous conversation is no longer accessible."
+                  iconColor="text-slate-400"
+                />
+              </div>
+            </Card>
+            <Card>
+              <SubHeading>Requirements</SubHeading>
+              <p className="text-xs text-slate-500">
+                Claude Code CLI must be installed and accessible in your PATH.
+                Install it from <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">claude.ai/code</code>{' '}
+                and verify with <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">claude --version</code> in a terminal.
+                The project must also have a valid local repo path set.
+              </p>
             </Card>
           </section>
 
@@ -390,13 +535,22 @@ export default function Manual() {
               id="settings"
               icon={Settings}
               title="Settings"
-              subtitle="Appearance, data portability, and app information"
+              subtitle="Appearance, integrations, and data portability"
             />
             <Card className="mb-3">
               <SubHeading>Appearance</SubHeading>
               <div className="space-y-0">
                 <FeatureRow icon={Settings} label="Theme" desc="Toggle between Dark and Light mode. Your choice is saved and restored on next launch." iconColor="text-violet-400" />
                 <FeatureRow icon={Settings} label="Zoom" desc="Scale the entire UI to 90%, 100%, 115%, or 130%. Useful for high-DPI displays or personal preference." iconColor="text-slate-400" />
+              </div>
+            </Card>
+            <Card className="mb-3">
+              <SubHeading>Integrations &amp; Scaffold</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={FolderOpen} label="Default projects directory" desc="Where new scaffolded projects are created (e.g. ~/Projects). Required before using scaffold from scratch." iconColor="text-slate-400" />
+                <FeatureRow icon={GitBranch} label="GitHub (gh CLI)" desc="Shows whether the gh CLI is installed and authenticated. Install with `brew install gh` and run `gh auth login`." iconColor="text-cyan-400" />
+                <FeatureRow icon={Wrench} label="Vercel access token" desc="Enables automatic Vercel project creation during scaffold. Get your token from vercel.com/account/tokens." iconColor="text-slate-400" />
+                <FeatureRow icon={Wrench} label="Supabase access token + org ID" desc="Enables automatic Supabase project provisioning during scaffold. Find both at supabase.com/dashboard." iconColor="text-slate-400" />
               </div>
             </Card>
             <Card>
@@ -428,6 +582,71 @@ export default function Manual() {
               <p className="text-xs text-slate-600 font-mono bg-surface border border-border rounded px-3 py-2">
                 ~/Library/Application Support/com.glen.projecttracker/projects.db
               </p>
+            </Card>
+          </section>
+
+          {/* ─── Testing Standard ─────────── */}
+          <section className="mb-8">
+            <SectionHeading
+              id="testing-standard"
+              icon={FlaskConical}
+              title="Testing Standard"
+              subtitle="How to test and report testing honestly at every stage of development"
+            />
+            <Card className="mb-3">
+              <p className="text-xs text-slate-500 mb-3">
+                Project Tracker enforces a clear distinction between three types of verification.
+                This standard is built into the <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono text-[11px]">CLAUDE.md</code> of
+                every new project and into the <strong className="text-slate-300">testing-discipline</strong> skill.
+                The core rule is simple: <strong className="text-slate-300">build passing is not the same as tested.</strong>
+              </p>
+              <SubHeading>Three testing categories</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow
+                  icon={CheckCircle2}
+                  label="Build / type checks"
+                  desc="Running npm run build, cargo build, tsc, or a linter. These confirm code compiles — they do not prove that features work correctly."
+                  iconColor="text-slate-400"
+                />
+                <FeatureRow
+                  icon={Activity}
+                  label="Manual functional testing"
+                  desc="Actually launching the app and verifying behaviour: opening the feature, checking validation, loading states, success and error outcomes, disabled controls, and light/dark mode readability."
+                  iconColor="text-blue-400"
+                />
+                <FeatureRow
+                  icon={CheckCircle2}
+                  label="Automated tests"
+                  desc="Repeatable checks for pure functions and deterministic logic. Added where the test runner supports it — not forced where the overhead is not justified."
+                  iconColor="text-green-400"
+                />
+              </div>
+            </Card>
+            <Card className="mb-3">
+              <SubHeading>Required reporting format</SubHeading>
+              <p className="text-xs text-slate-500 mb-2">
+                Every implementation summary should include a <strong className="text-slate-300">Testing performed</strong> section structured like this:
+              </p>
+              <div className="bg-surface border border-border rounded-md px-3 py-2.5 font-mono text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">
+                <span className="text-slate-300">Testing performed</span><br />
+                - Build/type checks:<br />
+                {'    '}- [exact commands run]<br />
+                - Manual testing:<br />
+                {'    '}- [exact behaviours verified]<br />
+                - Automated tests:<br />
+                {'    '}- [tests added or run, or "none"]<br />
+                - Limitations:<br />
+                {'    '}- [what was not tested]
+              </div>
+            </Card>
+            <Card>
+              <SubHeading>Honesty rules</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={XCircle}      label="Never say 'tested' without specifics"                desc="Always name the kind of testing and what was verified. 'Tested and working' is not acceptable." iconColor="text-red-400" />
+                <FeatureRow icon={XCircle}      label="Don't claim manual testing unless the app was launched" desc="If the feature was not exercised in a running app, say so explicitly." iconColor="text-red-400" />
+                <FeatureRow icon={CheckCircle2} label="State clearly when automated tests don't exist"      desc="'None — no test runner configured for this layer' is the right answer, not silence." iconColor="text-green-400" />
+                <FeatureRow icon={CheckCircle2} label="Prefer automated tests for pure functions first"     desc="Deterministic helpers and pure logic are the cheapest, most reliable place to add automated coverage." iconColor="text-green-400" />
+              </div>
             </Card>
           </section>
 

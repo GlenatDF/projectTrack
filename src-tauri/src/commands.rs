@@ -12,6 +12,7 @@ use crate::db::{
 use serde::Serialize;
 use crate::git;
 use crate::scaffold::{self, ScaffoldRequest, ScaffoldResult};
+use crate::project_init::{self, ProjectInitRequest, ProjectInitResult};
 use crate::AppState;
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -401,69 +402,6 @@ pub fn run_claude_here(path: String) -> Result<(), String> {
         "tell application \"Terminal\"\nactivate\ndo script \"cd '{arg}' && claude\"\nend tell"
     );
     Command::new("osascript").arg("-e").arg(&script).spawn().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Open VS Code at the given path and launch `claude` in its integrated terminal.
-/// Uses the `code` CLI to open the folder, then AppleScript to open the
-/// integrated terminal (Ctrl+`) and run `claude`.
-#[tauri::command]
-pub fn run_claude_in_vscode(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    if !p.exists() {
-        return Err(format!("Path does not exist: {path}"));
-    }
-
-    // Try to open VS Code via the `code` CLI so we know the exact process name.
-    let cli_candidates = [
-        "/usr/local/bin/code",
-        "/opt/homebrew/bin/code",
-        "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-    ];
-    let mut opened = false;
-    for candidate in &cli_candidates {
-        if Path::new(candidate).exists() {
-            if Command::new(candidate).arg(&path).spawn().is_ok() {
-                opened = true;
-                break;
-            }
-        }
-    }
-    if !opened {
-        // Fallback: plain `which code` — fast, no login shell.
-        if let Ok(out) = Command::new("which").arg("code").output() {
-            let bin = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !bin.is_empty() && Command::new(&bin).arg(&path).spawn().is_ok() {
-                opened = true;
-            }
-        }
-    }
-    if !opened {
-        return Err(
-            "VS Code CLI (code) not found. Install it via VS Code: Cmd+Shift+P → \
-             'Shell Command: Install code command in PATH'."
-                .to_string(),
-        );
-    }
-
-    // AppleScript: activate VS Code, wait for it to finish loading, then open
-    // the integrated terminal and type `claude`.
-    let script = "\
-tell application \"Visual Studio Code\" to activate\n\
-delay 2\n\
-tell application \"System Events\"\n\
-    tell process \"Code\"\n\
-        keystroke \"`\" using control down\n\
-        delay 0.8\n\
-        keystroke \"claude\"\n\
-        key code 36\n\
-    end tell\n\
-end tell";
-    Command::new("osascript")
-        .arg("-e")
-        .arg(script)
-        .spawn()
-        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1145,4 +1083,16 @@ pub fn scaffold_new_project(
     });
 
     Ok(result)
+}
+
+// ── Project init ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn init_new_project(
+    config: ProjectInitRequest,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<ProjectInitResult, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    project_init::init_project(&conn, config, &app)
 }
