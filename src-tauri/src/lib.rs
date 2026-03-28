@@ -78,6 +78,7 @@ pub fn run() {
             commands::delete_project,
             commands::scan_project,
             commands::get_project_scans,
+            commands::get_latest_scans,
             commands::validate_repo_path,
             commands::get_dashboard_stats,
             commands::open_folder,
@@ -123,6 +124,7 @@ pub fn run() {
             commands::scaffold_new_project,
             // Project init
             commands::init_new_project,
+            commands::scaffold_full_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

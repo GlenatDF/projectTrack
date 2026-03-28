@@ -5,6 +5,7 @@ import type {
   AssembledPrompt,
   DashboardStats,
   DiscoveredRepo,
+  FullScaffoldResult,
   ImportPlanResult,
   InProgressTask,
   MethodologyBlock,
@@ -53,6 +54,10 @@ export const scanProject = (projectId: number): Promise<ProjectScan> =>
 
 export const getProjectScans = (projectId: number, limit?: number): Promise<ProjectScan[]> =>
   invoke('get_project_scans', { projectId, limit });
+
+/** Fetch the latest scan for every project in one query — use on the dashboard. */
+export const getLatestScans = (): Promise<ProjectScan[]> =>
+  invoke('get_latest_scans');
 
 export const validateRepoPath = (path: string): Promise<boolean> =>
   invoke('validate_repo_path', { path });
@@ -238,3 +243,14 @@ export const scaffoldNewProject = (params: {
   createSupabase: boolean;
 }): Promise<ScaffoldResult> =>
   invoke('scaffold_new_project', params);
+
+export const scaffoldFullProject = (params: {
+  projectName: string;
+  description: string;
+  mainGoal: string;
+  createGithub: boolean;
+  createVercel: boolean;
+  createSupabase: boolean;
+  createClaudeSkills: boolean;
+}): Promise<FullScaffoldResult> =>
+  invoke('scaffold_full_project', params);

@@ -324,6 +324,18 @@ export interface ScaffoldResult {
   steps: ScaffoldStep[];
 }
 
+/** Returned by scaffold_full_project — combines scaffold + docs/skills + DB record */
+export interface FullScaffoldResult {
+  project_id: number;
+  project_path: string;
+  files_created: string[];
+  github_url: string | null;
+  vercel_project_url: string | null;
+  supabase_project_id: string | null;
+  supabase_db_password: string | null;
+  scaffold_steps: ScaffoldStep[];
+}
+
 export interface AppSettings {
   projects_dir?: string;
   vercel_token?: string;

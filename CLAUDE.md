@@ -127,3 +127,26 @@ See `.claude/skills/testing-discipline/SKILL.md` for the full testing skill.
 - Ship the smallest useful change and iterate
 - If something feels wrong, flag it before pressing on
 - All Tauri commands must be registered in `lib.rs` invoke_handler **and** have a typed wrapper in `api.ts`
+
+---
+
+## When to use skills
+
+**This file** is for standing context that applies almost every time Claude touches this repo: architecture, key files, session workflow, build commands, testing standard, and non-negotiable working rules. If a rule should always be followed, it lives here.
+
+**Skills** (`.claude/skills/`) are for reusable workflows, specialist review modes, or situation-specific procedures that only apply in certain contexts. A skill is invoked on purpose — not assumed to apply to every task.
+
+Rules:
+- Do not create a skill for every small preference — put permanent rules in CLAUDE.md
+- Prefer one clear, well-scoped skill over three overlapping ones
+- Avoid duplicating the same instruction in both CLAUDE.md and a skill
+- A good skill has a clear "when to use it" condition and a specific procedure
+
+## Skills in this repo
+
+| Skill | When to use it |
+|-------|----------------|
+| `testing-discipline` | When reporting the outcome of any implementation chunk — enforces honest testing notes |
+| `ui-readability` | When reviewing or improving UI components, colour, contrast, or visual hierarchy |
+| `feature-chunking` | When planning a non-trivial feature — explore first, break into reviewable chunks, implement one at a time |
+| `codebase-audit` | When doing a structured quality review — rates the codebase and surfaces correctness, security, and reliability gaps |

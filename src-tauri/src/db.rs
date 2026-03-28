@@ -383,6 +383,12 @@ pub fn fetch_projects(conn: &Connection) -> Result<Vec<Project>> {
     rows.collect()
 }
 
+pub fn fetch_project_names(conn: &Connection) -> Result<std::collections::HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT name FROM projects")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    rows.collect::<rusqlite::Result<_>>()
+}
+
 pub fn fetch_project(conn: &Connection, id: i64) -> Result<Project> {
     let sql = format!("SELECT {} FROM projects WHERE id = ?1", PROJECT_COLS);
     conn.query_row(&sql, params![id], row_to_project)
@@ -498,6 +504,21 @@ pub fn fetch_scans(conn: &Connection, project_id: i64, limit: i64) -> Result<Vec
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![project_id, limit], row_to_scan)?;
+    rows.collect()
+}
+
+/// Return the single most-recent scan for every project that has been scanned.
+/// One query instead of N — used by the dashboard to build its health/dirty map.
+pub fn fetch_latest_scans_all(conn: &Connection) -> Result<Vec<ProjectScan>> {
+    let sql = format!(
+        "SELECT {cols} FROM project_scans ps
+         WHERE ps.id = (
+             SELECT MAX(id) FROM project_scans WHERE project_id = ps.project_id
+         )",
+        cols = SCAN_COLS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], row_to_scan)?;
     rows.collect()
 }
 

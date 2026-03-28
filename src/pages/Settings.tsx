@@ -21,7 +21,9 @@ export default function Settings() {
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    getSettings().then(setSettings).catch(() => {});
+    getSettings().then(setSettings).catch((e) =>
+      setMsg({ type: 'err', text: `Failed to load settings: ${e}` })
+    );
     checkGhCli().then(setGhStatus).catch(() => setGhStatus(false));
   }, []);
 

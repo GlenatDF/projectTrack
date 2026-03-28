@@ -189,8 +189,8 @@ export default function ProjectDetail() {
   async function handleCopyBootstrap() {
     if (!project) return;
     try {
-      await copyBootstrapPrompt(projectId);
-      setActionNotice('Bootstrap prompt copied to clipboard (⌘V to paste)');
+      const msg = await copyBootstrapPrompt(projectId);
+      setActionNotice(msg);
     } catch (e) { setActionError(String(e)); }
   }
 

@@ -2,12 +2,12 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FolderKanban, Activity, AlertCircle, Clock, CheckCircle2, GitBranch, Zap,
-  Plus, Loader2, RefreshCw, Search, LayoutList, LayoutGrid,
+  Brain, Loader2, RefreshCw, Search, LayoutList, LayoutGrid,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { DashboardStats, InProgressTask, Project, ProjectScan } from '../lib/types';
 import {
-  getDashboardStats, getInProgressTasks, getProjects, getProjectScans,
+  getDashboardStats, getInProgressTasks, getProjects, getLatestScans,
   scanProject, updateProjectStatus,
 } from '../lib/api';
 import { ALL_PHASES, PHASE_LABELS, ALL_PRIORITIES, PRIORITY_LABELS } from '../lib/types';
@@ -66,15 +66,10 @@ export default function Dashboard() {
       setAllProjects(projects);
       setInProgressTasks(tasks);
 
-      // Fetch latest scan for projects that have been scanned (for health + dirty filter)
-      const scanned = projects.filter((p) => p.last_scanned_at);
+      // Fetch the latest scan per project in one query
+      const allScans = await getLatestScans();
       const scanMap: Record<number, ProjectScan> = {};
-      await Promise.all(
-        scanned.map(async (p) => {
-          const scans = await getProjectScans(p.id, 1);
-          if (scans[0]) scanMap[p.id] = scans[0];
-        }),
-      );
+      for (const s of allScans) scanMap[s.project_id] = s;
       setLatestScans(scanMap);
     } catch (e) {
       setError(String(e));
@@ -203,8 +198,8 @@ export default function Dashboard() {
         Scan All
       </Button>
       <Button variant="primary" size="sm" onClick={() => setWizardOpen(true)}>
-        <Plus size={12} />
-        New Project
+        <Brain size={12} />
+        New
       </Button>
     </>
   );
@@ -399,7 +394,7 @@ export default function Dashboard() {
                     description="Track your AI vibe-coding projects here"
                     action={
                       <Button variant="primary" size="sm" onClick={() => setWizardOpen(true)}>
-                        <Plus size={12} /> New Project
+                        <Brain size={12} /> New
                       </Button>
                     }
                   />

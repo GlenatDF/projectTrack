@@ -13,19 +13,41 @@ use serde::Serialize;
 use crate::git;
 use crate::scaffold::{self, ScaffoldRequest, ScaffoldResult};
 use crate::project_init::{self, ProjectInitRequest, ProjectInitResult};
+
+/// Combined result for the full "build from scratch" flow.
+#[derive(Debug, Serialize)]
+pub struct FullScaffoldResult {
+    pub project_id:           i64,
+    pub project_path:         String,
+    pub files_created:        Vec<String>,
+    pub github_url:           Option<String>,
+    pub vercel_project_url:   Option<String>,
+    pub supabase_project_id:  Option<String>,
+    pub supabase_db_password: Option<String>,
+    pub scaffold_steps:       Vec<scaffold::ScaffoldStep>,
+}
 use crate::AppState;
+
+/// Acquire the DB lock. If the mutex is poisoned (only possible if a thread
+/// panicked while holding it), recover the guard — the underlying Connection
+/// is almost certainly still valid since all DB errors are returned, not panicked.
+macro_rules! db_conn {
+    ($state:expr) => {
+        $state.db.lock().unwrap_or_else(|e| e.into_inner())
+    };
+}
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn get_projects(state: State<'_, AppState>) -> Result<Vec<Project>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_projects(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_project(id: i64, state: State<'_, AppState>) -> Result<Project, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_project(&conn, id).map_err(|e| e.to_string())
 }
 
@@ -34,7 +56,7 @@ pub fn create_project(
     project: CreateProject,
     state: State<'_, AppState>,
 ) -> Result<Project, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::insert_project(&conn, project).map_err(|e| e.to_string())
 }
 
@@ -44,7 +66,7 @@ pub fn update_project(
     project: UpdateProject,
     state: State<'_, AppState>,
 ) -> Result<Project, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_project_record(&conn, id, project).map_err(|e| e.to_string())
 }
 
@@ -58,7 +80,7 @@ pub fn update_project_status(
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid status: {status}"));
     }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_status(&conn, id, &status).map_err(|e| e.to_string())
 }
 
@@ -69,13 +91,13 @@ pub fn relink_repo_path(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Project, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_repo_path(&conn, id, &path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_project(id: i64, state: State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::delete_project_record(&conn, id).map_err(|e| e.to_string())
 }
 
@@ -86,7 +108,7 @@ pub fn scan_project(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<ProjectScan, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
 
     let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
 
@@ -105,8 +127,16 @@ pub fn get_project_scans(
     limit: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ProjectScan>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_scans(&conn, project_id, limit.unwrap_or(10)).map_err(|e| e.to_string())
+}
+
+/// Return the latest scan for every project in a single query.
+/// Used by the dashboard to build its health/dirty map without N+1 round-trips.
+#[tauri::command]
+pub fn get_latest_scans(state: State<'_, AppState>) -> Result<Vec<ProjectScan>, String> {
+    let conn = db_conn!(state);
+    db::fetch_latest_scans_all(&conn).map_err(|e| e.to_string())
 }
 
 /// Validate whether a path is an accessible git repo without saving a scan.
@@ -119,7 +149,7 @@ pub fn validate_repo_path(path: String) -> bool {
 
 #[tauri::command]
 pub fn get_dashboard_stats(state: State<'_, AppState>) -> Result<DashboardStats, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_dashboard_stats(&conn).map_err(|e| e.to_string())
 }
 
@@ -237,7 +267,7 @@ pub fn discover_repos(
     root_path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::DiscoveredRepo>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     let existing = db::fetch_all_repo_paths(&conn).map_err(|e| e.to_string())?;
 
     let root = Path::new(&root_path);
@@ -277,7 +307,7 @@ pub fn bulk_import_repos(
     repos: Vec<BulkImportItem>,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::Project>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     let existing = db::fetch_all_repo_paths(&conn).map_err(|e| e.to_string())?;
     let mut created = vec![];
     for item in repos {
@@ -337,9 +367,9 @@ pub fn choose_folder_mac() -> Result<Option<String>, String> {
 ///   2. Backslash-double           — AppleScript: \ → \\
 ///   3. Double-quote escape        — AppleScript: " → \"
 fn posix_shell_arg_for_applescript(path: &str) -> String {
-    path.replace('\'', r"'\''") // POSIX: ' → '\''
-        .replace('\\', r"\\")   // AppleScript: \ → \\
-        .replace('"', r#"\""#)  // AppleScript: " → \"
+    path.replace('\\', r"\\")   // 1. AppleScript: \ → \\ (must precede POSIX step)
+        .replace('"', r#"\""#)  // 2. AppleScript: " → \"
+        .replace('\'', r"'\''") // 3. POSIX: ' → '\'' (last, so these \ are not re-escaped)
 }
 
 /// Open a directory in Terminal.app.
@@ -513,7 +543,7 @@ pub fn run_claude_bootstrap(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
 
     if project.local_repo_path.is_empty() {
@@ -534,17 +564,17 @@ pub fn run_claude_bootstrap(
 }
 
 /// Compose and copy the bootstrap prompt for a project to the clipboard
-/// without opening a terminal. Returns the prompt text.
+/// without opening a terminal. Returns a user-facing notice string.
 #[tauri::command]
 pub fn copy_bootstrap_prompt(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
     let prompt = compose_bootstrap_prompt(&project);
-    copy_to_clipboard_pbcopy(&prompt);
-    Ok(prompt)
+    let clipboard_ok = copy_to_clipboard_pbcopy(&prompt);
+    Ok(notice(clipboard_ok))
 }
 
 /// Run `git status --short -b` in a directory and return the raw output.
@@ -577,7 +607,7 @@ pub fn is_iterm_available() -> bool {
 /// The caller is responsible for saving the string to a file.
 #[tauri::command]
 pub fn export_projects(state: State<'_, AppState>) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     let projects = db::export_all_projects(&conn).map_err(|e| e.to_string())?;
     serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())
 }
@@ -588,7 +618,63 @@ pub fn export_projects(state: State<'_, AppState>) -> Result<String, String> {
 pub fn import_projects(json: String, state: State<'_, AppState>) -> Result<usize, String> {
     let projects: Vec<db::Project> =
         serde_json::from_str(&json).map_err(|e| format!("Invalid JSON: {e}"))?;
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    const VALID_STATUS:   &[&str] = &["active", "blocked", "paused", "done", "idea"];
+    const VALID_PHASE:    &[&str] = &["idea", "planning", "scaffolding", "core_build",
+                                      "debugging", "testing", "polishing", "shipped"];
+    const VALID_PRIORITY: &[&str] = &["low", "medium", "high"];
+    const VALID_AI_TOOL:  &[&str] = &["claude", "chatgpt", "both", "other"];
+
+    for (i, p) in projects.iter().enumerate() {
+        let n = i + 1;
+        if p.name.trim().is_empty() {
+            return Err(format!("Project {n}: name must not be empty"));
+        }
+        if !VALID_STATUS.contains(&p.status.as_str()) {
+            return Err(format!("Project {n} \"{}\": invalid status {:?}", p.name, p.status));
+        }
+        if !VALID_PHASE.contains(&p.phase.as_str()) {
+            return Err(format!("Project {n} \"{}\": invalid phase {:?}", p.name, p.phase));
+        }
+        if !VALID_PRIORITY.contains(&p.priority.as_str()) {
+            return Err(format!("Project {n} \"{}\": invalid priority {:?}", p.name, p.priority));
+        }
+        if !VALID_AI_TOOL.contains(&p.ai_tool.as_str()) {
+            return Err(format!("Project {n} \"{}\": invalid ai_tool {:?}", p.name, p.ai_tool));
+        }
+        if !p.local_repo_path.is_empty() {
+            if !p.local_repo_path.starts_with('/') {
+                return Err(format!(
+                    "Project {n} \"{}\": local_repo_path must be an absolute path (starting with /)",
+                    p.name
+                ));
+            }
+            if p.local_repo_path.contains('\0') {
+                return Err(format!(
+                    "Project {n} \"{}\": local_repo_path contains invalid characters",
+                    p.name
+                ));
+            }
+        }
+    }
+
+    let conn = db_conn!(state);
+
+    // Check for duplicate names against existing projects.
+    let existing = db::fetch_project_names(&conn).map_err(|e| e.to_string())?;
+    let duplicates: Vec<&str> = projects
+        .iter()
+        .filter(|p| existing.contains(p.name.trim()))
+        .map(|p| p.name.as_str())
+        .collect();
+    if !duplicates.is_empty() {
+        return Err(format!(
+            "The following project names already exist in the database: {}. \
+             Delete them first, or rename before importing.",
+            duplicates.join(", ")
+        ));
+    }
+
     db::import_projects(&conn, projects).map_err(|e| e.to_string())
 }
 
@@ -599,7 +685,7 @@ pub fn get_project_documents(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Vec<ProjectDocument>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_project_documents(&conn, project_id).map_err(|e| e.to_string())
 }
 
@@ -610,7 +696,7 @@ pub fn update_project_document(
     content: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectDocument, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_project_document(&conn, project_id, &doc_type, &content)
         .map_err(|e| e.to_string())
 }
@@ -626,7 +712,7 @@ pub fn update_document_status(
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid document status: {status}"));
     }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_document_status(&conn, project_id, &doc_type, &status)
         .map_err(|e| e.to_string())
 }
@@ -636,7 +722,7 @@ pub fn regenerate_scaffold(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Vec<ProjectDocument>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::regenerate_scaffold(&conn, project_id).map_err(|e| e.to_string())
 }
 
@@ -646,7 +732,7 @@ pub fn regenerate_scaffold(
 pub fn get_methodology_blocks(
     state: State<'_, AppState>,
 ) -> Result<Vec<MethodologyBlock>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_methodology_blocks(&conn).map_err(|e| e.to_string())
 }
 
@@ -657,24 +743,22 @@ pub fn update_methodology_block(
     is_active: bool,
     state: State<'_, AppState>,
 ) -> Result<MethodologyBlock, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_methodology_block(&conn, &slug, &content, is_active)
         .map_err(|e| e.to_string())
 }
 
 // ── Planning: Prompt assembly & plan import ───────────────────────────────────
 
-/// Assemble the planning prompt for a project, copy it to the clipboard,
-/// and return the prompt text + any warnings.
+/// Assemble the planning prompt for a project and return the prompt text +
+/// any warnings. Clipboard copying is handled by the frontend.
 #[tauri::command]
 pub fn assemble_planning_prompt(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<AssembledPrompt, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let assembled = db::assemble_prompt(&conn, project_id).map_err(|e| e.to_string())?;
-    copy_to_clipboard_pbcopy(&assembled.prompt);
-    Ok(assembled)
+    let conn = db_conn!(state);
+    db::assemble_prompt(&conn, project_id).map_err(|e| e.to_string())
 }
 
 /// Import an AI-generated plan response into the database.
@@ -686,7 +770,7 @@ pub fn import_plan_response(
     raw_response: String,
     state: State<'_, AppState>,
 ) -> Result<ImportPlanResult, String> {
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = db_conn!(state);
     db::import_plan(&mut conn, project_id, &prompt_sent, &raw_response)
         .map_err(|e| e.to_string())
 }
@@ -725,7 +809,7 @@ pub fn run_plan_with_claude_cli(
 ) -> Result<String, String> {
     // Assemble prompt under a short-lived lock
     let prompt = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = db_conn!(state);
         db::assemble_prompt(&conn, project_id)
             .map_err(|e| e.to_string())?
             .prompt
@@ -782,7 +866,7 @@ pub fn get_project_plan(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<ProjectPlan, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_project_plan(&conn, project_id).map_err(|e| e.to_string())
 }
 
@@ -796,7 +880,7 @@ pub fn update_task_status(
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid task status: {status}"));
     }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_task_status_record(&conn, task_id, &status).map_err(|e| e.to_string())
 }
 
@@ -806,7 +890,7 @@ pub fn update_task_progress_note(
     note: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectTask, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_task_progress_note_record(&conn, task_id, &note).map_err(|e| e.to_string())
 }
 
@@ -820,7 +904,7 @@ pub fn update_phase_status(
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid phase status: {status}"));
     }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::update_phase_status_record(&conn, phase_id, &status).map_err(|e| e.to_string())
 }
 
@@ -829,13 +913,13 @@ pub fn get_ai_plan_runs(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Vec<AiPlanRun>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_ai_plan_runs(&conn, project_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_in_progress_tasks(state: State<'_, AppState>) -> Result<Vec<InProgressTask>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::fetch_in_progress_tasks(&conn).map_err(|e| e.to_string())
 }
 
@@ -863,7 +947,7 @@ pub fn get_opener_prompt(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<OpenerPrompt, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     let prompt = db::assemble_opener_prompt(&conn, project_id).map_err(|e| e.to_string())?;
     let session_id: String = conn
         .query_row(
@@ -885,7 +969,7 @@ pub fn start_claude_session(
     state: State<'_, AppState>,
 ) -> Result<SessionTurn, String> {
     let (session_id, repo_path, prompt) = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = db_conn!(state);
         // Guard: refuse if a session is already active — use send_session_message to
         // continue it, or reset_claude_session + start_claude_session for a fresh one.
         let existing: String = conn
@@ -922,7 +1006,7 @@ pub fn send_session_message(
     state: State<'_, AppState>,
 ) -> Result<SessionTurn, String> {
     let (session_id, repo_path) = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = db_conn!(state);
         let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
         // Read the stored session ID — do NOT generate a new one here.
         // If no session is active, the caller should have called start_claude_session first.
@@ -950,7 +1034,7 @@ pub fn reset_claude_session(
     project_id: i64,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::clear_project_session_id(&conn, project_id).map_err(|e| e.to_string())
 }
 
@@ -1019,7 +1103,7 @@ fn invoke_claude(session_id: &str, repo_path: &str, prompt: &str, resume: bool) 
 pub fn get_settings(
     state: State<'_, AppState>,
 ) -> Result<std::collections::HashMap<String, String>, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::get_all_settings(&conn).map_err(|e| e.to_string())
 }
 
@@ -1033,7 +1117,7 @@ pub fn update_setting(
     if !allowed.contains(&key.as_str()) {
         return Err(format!("Unknown setting key: {key}"));
     }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     db::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
 }
 
@@ -1055,7 +1139,7 @@ pub fn scaffold_new_project(
 ) -> Result<ScaffoldResult, String> {
     // Read settings (needs lock only briefly)
     let (projects_dir, vercel_token, supabase_token, supabase_org_id) = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = db_conn!(state);
         let projects_dir = db::get_setting(&conn, "projects_dir").map_err(|e| e.to_string())?;
         let vercel_token = db::get_setting(&conn, "vercel_token").map_err(|e| e.to_string())?;
         let supabase_token =
@@ -1093,6 +1177,194 @@ pub fn init_new_project(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ProjectInitResult, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = db_conn!(state);
     project_init::init_project(&conn, config, &app)
+}
+
+// ── Full scaffold (scratch → docs/skills → git → cloud → DB) ──────────────────
+
+#[tauri::command]
+pub fn scaffold_full_project(
+    project_name: String,
+    description: String,
+    main_goal: String,
+    create_github: bool,
+    create_vercel: bool,
+    create_supabase: bool,
+    create_claude_skills: bool,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<FullScaffoldResult, String> {
+    // Read settings (brief DB lock — released before long-running ops)
+    let (projects_dir, vercel_token, supabase_token, supabase_org_id) = {
+        let conn = db_conn!(state);
+        let projects_dir =
+            db::get_setting(&conn, "projects_dir").map_err(|e| e.to_string())?;
+        let vercel_token =
+            db::get_setting(&conn, "vercel_token").map_err(|e| e.to_string())?;
+        let supabase_token =
+            db::get_setting(&conn, "supabase_access_token").map_err(|e| e.to_string())?;
+        let supabase_org_id =
+            db::get_setting(&conn, "supabase_org_id").map_err(|e| e.to_string())?;
+        (projects_dir, vercel_token, supabase_token, supabase_org_id)
+    };
+
+    if projects_dir.is_empty() {
+        return Err(
+            "No default projects directory configured. Set one in Settings.".to_string(),
+        );
+    }
+
+    let path_env = augmented_path();
+    let slug = scaffold::to_slug(&project_name);
+    let expanded_dir =
+        projects_dir.replace('~', &std::env::var("HOME").unwrap_or_default());
+    let project_dir = std::path::PathBuf::from(&expanded_dir).join(&slug);
+    let project_path = project_dir.to_string_lossy().to_string();
+
+    let mut scaffold_steps: Vec<scaffold::ScaffoldStep> = Vec::new();
+    let mut files_created: Vec<String> = Vec::new();
+    let mut github_url: Option<String> = None;
+    let mut vercel_url: Option<String> = None;
+    let mut supabase_id: Option<String> = None;
+    let mut supabase_pass: Option<String> = None;
+
+    // 1. Create Next.js scaffold files
+    project_init::emit_progress(&app, "files", "Creating project files", "running");
+    match scaffold::create_local_files(&project_dir, &project_name, &slug, &description) {
+        Ok(()) => {
+            project_init::emit_progress(&app, "files", "Creating project files", "done");
+            scaffold_steps.push(scaffold::ScaffoldStep {
+                label:  "Created project files".to_string(),
+                status: "ok".to_string(),
+                detail: None,
+            });
+        }
+        Err(e) => {
+            project_init::emit_progress(&app, "files", "Creating project files", "error");
+            return Err(e);
+        }
+    }
+
+    // 2. Write markdown docs + Claude skills (before git, included in initial commit)
+    let init_req = ProjectInitRequest {
+        name:                 project_name.clone(),
+        description:          description.clone(),
+        project_type:         "web_app".to_string(),
+        main_goal:            main_goal.clone(),
+        starter_template:     "next-supabase".to_string(),
+        add_ons:              vec![],
+        constraints:          String::new(),
+        coding_style:         String::new(),
+        ui_style:             String::new(),
+        create_git_repo:      false,
+        create_claude_skills,
+    };
+    let doc_files = project_init::write_docs_and_skills(&project_dir, &init_req, &app)?;
+    files_created.extend(doc_files);
+
+    // 3. Git init — commits scaffold files + docs + skills together
+    project_init::emit_progress(&app, "git", "Initialising git repo", "running");
+    let git_step = scaffold::run_git_init(&project_dir, &path_env);
+    let git_ok = git_step.status == "ok";
+    project_init::emit_progress(
+        &app,
+        "git",
+        "Initialising git repo",
+        if git_ok { "done" } else { "error" },
+    );
+    scaffold_steps.push(git_step);
+
+    // 4. GitHub
+    if create_github {
+        project_init::emit_progress(&app, "github", "Creating GitHub repo", "running");
+        let (step, url) = scaffold::create_github_repo(&project_dir, &slug, &path_env);
+        let ok = step.status == "ok";
+        project_init::emit_progress(
+            &app,
+            "github",
+            "Creating GitHub repo",
+            if ok { "done" } else { "error" },
+        );
+        github_url = url;
+        scaffold_steps.push(step);
+    }
+
+    // 5. Vercel
+    if create_vercel {
+        project_init::emit_progress(&app, "vercel", "Creating Vercel project", "running");
+        let (step, url) = scaffold::create_vercel_project(&project_name, &slug, &vercel_token);
+        let ok = step.status == "ok";
+        project_init::emit_progress(
+            &app,
+            "vercel",
+            "Creating Vercel project",
+            if ok { "done" } else { "error" },
+        );
+        vercel_url = url;
+        scaffold_steps.push(step);
+    }
+
+    // 6. Supabase
+    if create_supabase {
+        project_init::emit_progress(&app, "supabase", "Creating Supabase project", "running");
+        let (step, id, pass) =
+            scaffold::create_supabase_project(&project_name, &slug, &supabase_org_id, &supabase_token);
+        let ok = step.status == "ok";
+        project_init::emit_progress(
+            &app,
+            "supabase",
+            "Creating Supabase project",
+            if ok { "done" } else { "error" },
+        );
+        supabase_id = id;
+        supabase_pass = pass;
+        scaffold_steps.push(step);
+    }
+
+    // 7. Save to DB
+    project_init::emit_progress(&app, "database", "Saving to database", "running");
+    let goal_note = if main_goal.trim().is_empty() {
+        String::new()
+    } else {
+        format!("Goal: {}", main_goal)
+    };
+    let create = CreateProject {
+        name:                  project_name.clone(),
+        description:           description.clone(),
+        local_repo_path:       project_path.clone(),
+        status:                "active".to_string(),
+        phase:                 "planning".to_string(),
+        priority:              "medium".to_string(),
+        ai_tool:               "claude".to_string(),
+        current_task:          String::new(),
+        next_task:             String::new(),
+        blocker:               String::new(),
+        notes:                 goal_note,
+        claude_startup_prompt: String::new(),
+        claude_prompt_mode:    "append".to_string(),
+        claude_priority_files: String::new(),
+        session_handoff_notes: String::new(),
+        startup_command:       String::new(),
+        preferred_terminal:    String::new(),
+    };
+    let project = {
+        let conn = db_conn!(state);
+        db::insert_project(&conn, create).map_err(|e| {
+            project_init::emit_progress(&app, "database", "Saving to database", "error");
+            e.to_string()
+        })?
+    };
+    project_init::emit_progress(&app, "database", "Saving to database", "done");
+
+    Ok(FullScaffoldResult {
+        project_id:           project.id,
+        project_path,
+        files_created,
+        github_url,
+        vercel_project_url:   vercel_url,
+        supabase_project_id:  supabase_id,
+        supabase_db_password: supabase_pass,
+        scaffold_steps,
+    })
 }

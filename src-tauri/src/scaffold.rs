@@ -579,6 +579,20 @@ pub struct ScaffoldRequest {
 
 pub fn scaffold_project(req: ScaffoldRequest) -> ScaffoldResult {
     let slug = to_slug(&req.project_name);
+    if slug.is_empty() {
+        return ScaffoldResult {
+            project_path: String::new(),
+            slug: String::new(),
+            github_url: None,
+            vercel_project_url: None,
+            supabase_project_id: None,
+            supabase_db_password: None,
+            steps: vec![ScaffoldStep::err(
+                "Validate project name",
+                "Project name must contain at least one letter or number",
+            )],
+        };
+    }
     let projects_dir = req.projects_dir.replace('~', &std::env::var("HOME").unwrap_or_default());
     let project_dir = Path::new(&projects_dir).join(&slug);
     let project_path = project_dir.to_string_lossy().to_string();

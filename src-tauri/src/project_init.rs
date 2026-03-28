@@ -25,6 +25,12 @@ fn emit(app: &tauri::AppHandle, step: &str, label: &str, status: &str) {
     });
 }
 
+/// Public wrapper so other modules (e.g. commands.rs) can emit project-init
+/// progress events without duplicating the event name or struct.
+pub fn emit_progress(app: &tauri::AppHandle, step: &str, label: &str, status: &str) {
+    emit(app, step, label, status);
+}
+
 // ── Request / Response ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +53,63 @@ pub struct ProjectInitResult {
     pub project_id: i64,
     pub project_path: String,
     pub files_created: Vec<String>,
+}
+
+// ── Docs + skills helper (reusable from other commands) ────────────────────────
+
+/// Write all markdown docs and optional Claude skills into `project_dir`.
+/// Emits "docs" and "skills" progress events. Returns the list of relative
+/// file paths created.
+pub fn write_docs_and_skills(
+    project_dir: &std::path::Path,
+    req: &ProjectInitRequest,
+    app: &tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    let mut files_created: Vec<String> = Vec::new();
+
+    emit(app, "docs", "Generating markdown docs", "running");
+    let today = today_iso();
+    let docs: &[(&str, String)] = &[
+        ("CLAUDE.md",                         tmpl_claude_md(req)),
+        ("PROJECT_BRIEF.md",                  tmpl_brief(req)),
+        ("PRODUCT_REQUIREMENTS.md",           tmpl_prd(req, &today)),
+        ("TECHNICAL_SPEC.md",                 tmpl_tech_spec(req, &today)),
+        ("TASKS.md",                          tmpl_tasks(req)),
+        ("DECISION_LOG.md",                   tmpl_decision_log(req, &today)),
+        ("SESSION_LOG.md",                    tmpl_session_log()),
+        ("RISKS_ASSUMPTIONS_DEPENDENCIES.md", tmpl_risks(req)),
+        ("PROJECT_STAGE.md",                  tmpl_project_stage(&today)),
+        ("PROJECT_START_PROMPT.md",           tmpl_start_prompt(req)),
+        ("README.md",                         tmpl_readme(req)),
+    ];
+    for (name, content) in docs {
+        if let Err(e) = write_file(project_dir, name, content) {
+            emit(app, "docs", "Generating markdown docs", "error");
+            return Err(e);
+        }
+        files_created.push(name.to_string());
+    }
+    emit(app, "docs", "Generating markdown docs", "done");
+
+    if req.create_claude_skills {
+        emit(app, "skills", "Generating Claude skills", "running");
+        let skills: &[(&str, String)] = &[
+            (".claude/skills/project-kickoff/SKILL.md",    skill_project_kickoff()),
+            (".claude/skills/feature-chunking/SKILL.md",   skill_feature_chunking()),
+            (".claude/skills/ui-readability/SKILL.md",     skill_ui_readability()),
+            (".claude/skills/testing-discipline/SKILL.md", skill_testing_discipline()),
+        ];
+        for (path, content) in skills {
+            if let Err(e) = write_file(project_dir, path, content) {
+                emit(app, "skills", "Generating Claude skills", "error");
+                return Err(e);
+            }
+            files_created.push(path.to_string());
+        }
+        emit(app, "skills", "Generating Claude skills", "done");
+    }
+
+    Ok(files_created)
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────────
@@ -90,52 +153,9 @@ pub fn init_project(
 
     let mut files_created: Vec<String> = Vec::new();
 
-    // 2. Write markdown docs
-    emit(app, "docs", "Generating markdown docs", "running");
-    let today = today_iso();
-    let docs: &[(&str, String)] = &[
-        ("CLAUDE.md",                         tmpl_claude_md(&req)),
-        ("PROJECT_BRIEF.md",                  tmpl_brief(&req)),
-        ("PRODUCT_REQUIREMENTS.md",           tmpl_prd(&req, &today)),
-        ("TECHNICAL_SPEC.md",                 tmpl_tech_spec(&req, &today)),
-        ("TASKS.md",                          tmpl_tasks(&req)),
-        ("DECISION_LOG.md",                   tmpl_decision_log(&req, &today)),
-        ("SESSION_LOG.md",                    tmpl_session_log()),
-        ("RISKS_ASSUMPTIONS_DEPENDENCIES.md", tmpl_risks(&req)),
-        ("PROJECT_STAGE.md",                  tmpl_project_stage(&today)),
-        ("PROJECT_START_PROMPT.md",           tmpl_start_prompt(&req)),
-        ("README.md",                         tmpl_readme(&req)),
-    ];
-    for (name, content) in docs {
-        if let Err(e) = write_file(&project_dir, name, content) {
-            emit(app, "docs", "Generating markdown docs", "error");
-            return Err(e);
-        }
-        files_created.push(name.to_string());
-    }
-    emit(app, "docs", "Generating markdown docs", "done");
-
-    // 3. Write Claude skills if requested
-    if req.create_claude_skills {
-        emit(app, "skills", "Generating Claude skills", "running");
-        let skills: &[(&str, String)] = &[
-            (".claude/skills/project-kickoff/SKILL.md",       skill_project_kickoff()),
-            (".claude/skills/task-planning/SKILL.md",         skill_task_planning()),
-            (".claude/skills/safe-feature-build/SKILL.md",    skill_safe_feature_build()),
-            (".claude/skills/update-decision-log/SKILL.md",   skill_update_decision_log()),
-            (".claude/skills/doc-maintenance/SKILL.md",       skill_doc_maintenance()),
-            (".claude/skills/ui-readability/SKILL.md",        skill_ui_readability()),
-            (".claude/skills/testing-discipline/SKILL.md",    skill_testing_discipline()),
-        ];
-        for (path, content) in skills {
-            if let Err(e) = write_file(&project_dir, path, content) {
-                emit(app, "skills", "Generating Claude skills", "error");
-                return Err(e);
-            }
-            files_created.push(path.to_string());
-        }
-        emit(app, "skills", "Generating Claude skills", "done");
-    }
+    // 2+3. Write docs and skills
+    let doc_files = write_docs_and_skills(&project_dir, &req, app)?;
+    files_created.extend(doc_files);
 
     // 4. Initialise git repo
     if req.create_git_repo {
@@ -421,6 +441,29 @@ fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
     s.push_str("5. For UI changes, check: happy path, validation, loading, success, error, disabled controls, light/dark mode\n");
     s.push_str("6. Add automated tests for pure logic/helpers where the test setup allows it\n\n");
     s.push_str("See `.claude/skills/testing-discipline/SKILL.md` for the full testing skill.\n\n");
+
+    // When to use skills
+    s.push_str("## When to use skills\n\n");
+    s.push_str("**This file (CLAUDE.md)** is for standing project context that applies to almost every task: ");
+    s.push_str("overview, stack, key files, session workflow, and always-on working rules.\n\n");
+    s.push_str("**Skills** (`.claude/skills/`) are for specific workflows or specialist review modes — ");
+    s.push_str("things that only apply in certain situations. Read a skill when the task clearly calls for it. ");
+    s.push_str("Do not assume every skill applies to every task.\n\n");
+    s.push_str("Rules:\n");
+    s.push_str("- Put permanent project rules in CLAUDE.md, not in skills\n");
+    s.push_str("- Use skills for structured processes: feature planning, testing review, UI audit\n");
+    s.push_str("- Keep the skill set small — a few genuinely useful ones beat a junk drawer\n");
+    s.push_str("- Avoid duplicating the same instruction in both CLAUDE.md and a skill\n\n");
+
+    if r.create_claude_skills {
+        s.push_str("### Skills in this project\n\n");
+        s.push_str("| Skill | When to use it |\n");
+        s.push_str("|-------|----------------|\n");
+        s.push_str("| `project-kickoff` | First session on the project — review docs, find gaps, establish a plan |\n");
+        s.push_str("| `feature-chunking` | Before any non-trivial feature — plan chunks first, implement one at a time |\n");
+        s.push_str("| `ui-readability` | When reviewing or improving UI components, colour, contrast, or hierarchy |\n");
+        s.push_str("| `testing-discipline` | When reporting the outcome of any implementation chunk |\n\n");
+    }
 
     // Principles
     s.push_str("## Working principles\n\n");
@@ -927,158 +970,48 @@ fn skill_project_kickoff() -> String {
     s
 }
 
-fn skill_task_planning() -> String {
+fn skill_feature_chunking() -> String {
     let mut s = String::new();
-    s.push_str("# Task Planning\n\n");
+    s.push_str("# Feature Chunking\n\n");
     s.push_str("## Purpose\n\n");
-    s.push_str("Use this skill when breaking down a feature, goal, or change into a concrete,\n");
-    s.push_str("ordered task list before starting implementation.\n\n");
-    s.push_str("Good task planning prevents scope creep, surfaces unknowns early, and\n");
-    s.push_str("keeps diffs small and reviewable.\n\n");
+    s.push_str("Use this skill when planning or implementing a non-trivial feature or change.\n");
+    s.push_str("Explore first, break the work into reviewable chunks, implement one chunk at a time.\n\n");
     s.push_str("## When to use it\n\n");
-    s.push_str("- Before starting any non-trivial feature\n");
-    s.push_str("- When a task turns out to be larger than expected\n");
-    s.push_str("- When the path forward is unclear and needs to be structured\n\n");
-    s.push_str("## Steps\n\n");
-    s.push_str("### 1. Understand the goal clearly\n\n");
-    s.push_str("Before decomposing, make sure you understand:\n\n");
-    s.push_str("- What is the user trying to achieve?\n");
-    s.push_str("- What does success look like (what changes in the product)?\n");
-    s.push_str("- Are there constraints on how it should be done?\n");
-    s.push_str("- Are there related requirements in PRODUCT_REQUIREMENTS.md?\n\n");
-    s.push_str("If anything is unclear, ask before proceeding.\n\n");
-    s.push_str("### 2. Identify unknowns first\n\n");
-    s.push_str("List anything that is uncertain before listing tasks:\n\n");
-    s.push_str("- Technical unknowns (\"I'm not sure how X works in this stack\")\n");
-    s.push_str("- Product unknowns (\"I'm not sure if the user wants A or B\")\n");
-    s.push_str("- Dependency unknowns (\"This relies on something that isn't built yet\")\n\n");
-    s.push_str("Resolve the most important unknowns before creating the task list.\n");
-    s.push_str("If resolution requires a spike (a small exploratory task), add that as the first task.\n\n");
-    s.push_str("### 3. Break the work into tasks\n\n");
-    s.push_str("Rules for good task decomposition:\n\n");
-    s.push_str("- Each task should be completable in a single focused session\n");
-    s.push_str("- Each task should produce a clear, verifiable result\n");
-    s.push_str("- Avoid tasks that mix concerns (e.g. \"build UI and wire up API\" = two tasks)\n");
-    s.push_str("- If a task is still vague, break it down further\n\n");
-    s.push_str("### 4. Order by dependency and risk\n\n");
-    s.push_str("- Put foundational tasks before tasks that depend on them\n");
-    s.push_str("- Put risky or uncertain tasks early so problems surface quickly\n");
-    s.push_str("- Put polish and edge cases at the end\n\n");
-    s.push_str("### 5. Confirm before starting\n\n");
-    s.push_str("Show the task list to the user and get explicit confirmation before starting.\n");
-    s.push_str("Add the confirmed tasks to TASKS.md.\n\n");
-    s.push_str("## Output\n\n");
-    s.push_str("- An ordered task list in TASKS.md\n");
-    s.push_str("- Any unknowns resolved or flagged as risks in RISKS_ASSUMPTIONS_DEPENDENCIES.md\n");
-    s.push_str("- A clear first task ready to start\n");
-    s
-}
-
-fn skill_safe_feature_build() -> String {
-    let mut s = String::new();
-    s.push_str("# Safe Feature Build\n\n");
-    s.push_str("## Purpose\n\n");
-    s.push_str("Use this skill when implementing a new feature to keep changes minimal,\n");
-    s.push_str("focused, and reviewable — minimising the risk of breaking existing behaviour.\n\n");
-    s.push_str("## Core principle\n\n");
-    s.push_str("The safest feature build is the smallest one that works.\n");
-    s.push_str("Resist the urge to improve, refactor, or extend beyond what was asked.\n\n");
-    s.push_str("## Before you write any code\n\n");
-    s.push_str("1. Read the relevant existing code — understand what is already there\n");
-    s.push_str("2. Confirm the task is clear and has a testable success condition\n");
-    s.push_str("3. Check TASKS.md and DECISION_LOG.md for context that might affect the approach\n");
-    s.push_str("4. If the change is larger than expected, stop and propose a task breakdown first\n\n");
-    s.push_str("## During implementation\n\n");
-    s.push_str("- Make one change at a time\n");
-    s.push_str("- Do not refactor code that is not directly related to the task\n");
-    s.push_str("- Do not add features, options, or configuration that were not asked for\n");
-    s.push_str("- Do not add error handling for cases that cannot actually happen\n");
-    s.push_str("- Keep diffs small: a focused 50-line change is better than a sprawling 500-line one\n");
+    s.push_str("- Before starting any feature that touches more than 2–3 files or has uncertain scope\n");
+    s.push_str("- When a task turns out to be larger than expected mid-session\n");
+    s.push_str("- When the right approach is unclear and needs to be structured before any code is written\n\n");
+    s.push_str("## Phase 1 — Planning pass (before writing any code)\n\n");
+    s.push_str("1. **Read the relevant code** — understand what already exists\n");
+    s.push_str("2. **Identify unknowns** — list anything unclear; resolve the most important ones first\n");
+    s.push_str("3. **Propose a chunk breakdown** — smallest steps that are each independently verifiable\n");
+    s.push_str("4. **Get confirmation where appropriate** — show the breakdown to the user before starting, especially when scope, trade-offs, or sequence matter; for obvious small plans, a brief summary is enough\n\n");
+    s.push_str("Good chunk rules:\n\n");
+    s.push_str("- Each chunk should be completable in one focused session\n");
+    s.push_str("- Each chunk should produce a clear, verifiable result\n");
+    s.push_str("- Do not mix concerns in one chunk (\"build UI and wire up API\" = two chunks)\n");
+    s.push_str("- Order by dependency and risk — uncertain or risky items first, polish last\n\n");
+    s.push_str("## Phase 2 — Implementation (one chunk at a time)\n\n");
+    s.push_str("- Implement only the current chunk — do not get ahead\n");
+    s.push_str("- Make the smallest change that achieves the goal\n");
+    s.push_str("- Do not refactor code not directly related to the current chunk\n");
+    s.push_str("- Do not add features or configuration that were not asked for\n");
     s.push_str("- Prefer editing existing patterns over introducing new ones\n");
-    s.push_str("- If you notice an existing bug, flag it — but do not fix it in this change unless asked\n\n");
-    s.push_str("## Security considerations\n\n");
-    s.push_str("- Never introduce SQL injection, XSS, command injection, or path traversal vulnerabilities\n");
-    s.push_str("- Validate input at system boundaries (user input, external APIs) — trust internal code\n");
-    s.push_str("- Do not expose secrets, credentials, or internal paths in outputs\n");
-    s.push_str("- If you are unsure about the security implications of a change, say so\n\n");
-    s.push_str("## After implementation\n\n");
-    s.push_str("1. Test the change manually — verify it does what was intended\n");
-    s.push_str("2. Check that nothing obvious is broken in adjacent functionality\n");
-    s.push_str("3. Update TASKS.md: mark the task done, add any follow-up tasks discovered\n");
-    s.push_str("4. If a significant decision was made during implementation, log it in DECISION_LOG.md\n");
-    s.push_str("5. Add a note to SESSION_LOG.md\n\n");
+    s.push_str("- If you notice an existing bug, flag it — do not fix it unless asked\n\n");
+    s.push_str("Security rules (apply to every chunk):\n\n");
+    s.push_str("- Never introduce SQL injection, XSS, command injection, or path traversal\n");
+    s.push_str("- Validate input at system boundaries — trust internal code and framework guarantees\n");
+    s.push_str("- Do not expose secrets or credentials in outputs or error messages\n\n");
+    s.push_str("## Phase 3 — After each chunk\n\n");
+    s.push_str("1. Run the build and type checks — confirm clean\n");
+    s.push_str("2. If the chunk changed visible UI, manually verify the affected flow where practical\n");
+    s.push_str("3. Report testing honestly using the testing-discipline format\n");
+    s.push_str("4. Flag any new scope discovered — let it become its own chunk\n");
+    s.push_str("5. If a significant decision was made, log it in DECISION_LOG.md\n\n");
     s.push_str("## Red flags — stop and check with the user\n\n");
-    s.push_str("- The change is touching more files than expected\n");
-    s.push_str("- The change requires modifying the data model or an API contract\n");
+    s.push_str("- The change is touching more files than the chunk plan anticipated\n");
+    s.push_str("- The change requires modifying a data model or API contract\n");
     s.push_str("- The change introduces a new dependency\n");
-    s.push_str("- The change requires updating multiple other components\n");
-    s.push_str("- Something feels wrong about the approach but you're not sure why\n");
-    s
-}
-
-fn skill_update_decision_log() -> String {
-    let mut s = String::new();
-    s.push_str("# Update Decision Log\n\n");
-    s.push_str("## Purpose\n\n");
-    s.push_str("Use this skill whenever a significant technical or product decision is made.\n");
-    s.push_str("A well-maintained decision log prevents the same debates from happening twice\n");
-    s.push_str("and helps future contributors (and Claude) understand why things are the way they are.\n\n");
-    s.push_str("## When to log a decision\n\n");
-    s.push_str("Log a decision when any of the following are true:\n\n");
-    s.push_str("- Two or more approaches were considered and one was chosen\n");
-    s.push_str("- A library, tool, or service was adopted or rejected\n");
-    s.push_str("- The data model or an API contract changed in a non-trivial way\n");
-    s.push_str("- A requirement was deferred intentionally with a clear reason\n");
-    s.push_str("- An assumption was confirmed or invalidated\n");
-    s.push_str("- A trade-off was accepted (e.g. performance vs. simplicity)\n\n");
-    s.push_str("**Do not log** minor implementation choices that have no long-term impact.\n\n");
-    s.push_str("## Format\n\n");
-    s.push_str("Add an entry to DECISION_LOG.md using this structure:\n\n");
-    s.push_str("```markdown\n");
-    s.push_str("### YYYY-MM-DD — Short, specific title\n\n");
-    s.push_str("**Context:**\nWhy this decision was needed. What problem were we solving? What made it non-obvious?\n\n");
-    s.push_str("**Decision:**\nWhat was decided. Be specific — avoid vague language like \"we chose the better approach\".\n\n");
-    s.push_str("**Alternatives considered:**\nWhat else was evaluated and why it was not chosen. Be honest about trade-offs.\n\n");
-    s.push_str("**Consequences:**\nWhat this decision means going forward. Accepted trade-offs. Things that now follow from this choice.\n");
-    s.push_str("```\n\n");
-    s.push_str("## Tips for good entries\n\n");
-    s.push_str("- Write as if explaining to a new developer joining the project in 6 months\n");
-    s.push_str("- Be honest about trade-offs — acknowledge what was given up, not just what was gained\n");
-    s.push_str("- Keep the title specific enough to find later (\"Chose SQLite over Postgres\" not \"Database decision\")\n");
-    s.push_str("- Include the date — context and circumstances change over time\n");
-    s.push_str("- Do not go back and edit old entries to make past decisions look better\n");
-    s
-}
-
-fn skill_doc_maintenance() -> String {
-    let mut s = String::new();
-    s.push_str("# Doc Maintenance\n\n");
-    s.push_str("## Purpose\n\n");
-    s.push_str("Use this skill to keep project documentation accurate and current as the project evolves.\n\n");
-    s.push_str("Stale documentation is worse than no documentation — it misleads.\n\n");
-    s.push_str("## What to update and when\n\n");
-    s.push_str("### After every session\n\n");
-    s.push_str("- **SESSION_LOG.md** — Add a brief entry: what was worked on, what was completed, blockers, next steps\n");
-    s.push_str("- **TASKS.md** — Mark completed tasks done, add any tasks discovered during the session, reorder if priorities have changed\n\n");
-    s.push_str("### When something important changes\n\n");
-    s.push_str("- **DECISION_LOG.md** — Any time a significant technical or product decision is made (see the update-decision-log skill)\n");
-    s.push_str("- **PROJECT_STAGE.md** — When the project moves to a new phase, or when the list of completed/in-progress/blocking items changes\n");
-    s.push_str("- **RISKS_ASSUMPTIONS_DEPENDENCIES.md** — When a risk is realised, an assumption is validated or invalidated, or a new dependency is added\n\n");
-    s.push_str("### When requirements or architecture changes\n\n");
-    s.push_str("- **PRODUCT_REQUIREMENTS.md** — When requirements are added, changed, or removed\n");
-    s.push_str("- **TECHNICAL_SPEC.md** — When the architecture, data model, or API contracts change\n");
-    s.push_str("- **CLAUDE.md** — When working preferences, stack, or key constraints change significantly\n\n");
-    s.push_str("## Signs that docs need attention\n\n");
-    s.push_str("- TASKS.md still shows tasks as pending that were finished sessions ago\n");
-    s.push_str("- SESSION_LOG.md has not been updated in more than a few sessions\n");
-    s.push_str("- TECHNICAL_SPEC.md describes an architecture that no longer matches the code\n");
-    s.push_str("- DECISION_LOG.md is empty despite several weeks of development\n");
-    s.push_str("- RISKS_ASSUMPTIONS_DEPENDENCIES.md still has only the placeholder rows from setup\n\n");
-    s.push_str("## How to run a doc review\n\n");
-    s.push_str("1. Read each doc in sequence\n");
-    s.push_str("2. Note anything that is outdated, vague, or contradicted by the codebase\n");
-    s.push_str("3. Propose specific updates — do not rewrite everything, just fix what is stale\n");
-    s.push_str("4. Confirm changes with the user before writing, for anything substantive\n");
+    s.push_str("- Something feels architecturally wrong but you cannot explain it yet\n");
     s
 }
 

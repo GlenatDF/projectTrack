@@ -5,7 +5,7 @@ import {
   Bot, Sparkles, FileText, GitBranch, AlertTriangle,
   Download, Activity, CheckCircle2, BarChart3,
   HelpCircle, XCircle, Circle, Star, ClipboardList, ShieldAlert,
-  MessageSquare, Wrench, Wand2, FlaskConical,
+  MessageSquare, Wrench, Wand2, FlaskConical, Hammer,
 } from 'lucide-react';
 
 /* ── Section definitions ──────────────────────────────────────────── */
@@ -189,27 +189,36 @@ export default function Manual() {
             <SectionHeading
               id="dashboard"
               icon={LayoutDashboard}
-              title="Dashboard"
-              subtitle="Your home screen — at-a-glance stats and quick project access"
+              title="Projects"
+              subtitle="Your home screen — stats, full filter toolbar, and project list"
             />
             <Card className="mb-3">
-              <SubHeading>Stat cards</SubHeading>
+              <SubHeading>Stats strip</SubHeading>
               <div className="space-y-0">
-                <FeatureRow icon={BarChart3} label="Total / Active" desc="Count of all projects and those currently in-progress." iconColor="text-cyan-400" />
-                <FeatureRow icon={AlertTriangle} label="Stale" desc="Projects with a repo path but no scan in the last 7 days and not marked done." iconColor="text-amber-400" />
-                <FeatureRow icon={GitBranch} label="Dirty repos" desc="Projects whose repo has uncommitted changes detected on the last scan." iconColor="text-orange-400" />
+                <FeatureRow icon={BarChart3} label="Total / Active" desc="Count of all projects and those currently in-progress. Click to filter the list to that subset." iconColor="text-cyan-400" />
+                <FeatureRow icon={AlertTriangle} label="Stale" desc="Projects with a repo path but no scan in the last 7 days and not marked done. Click to filter." iconColor="text-amber-400" />
+                <FeatureRow icon={GitBranch} label="Dirty repos" desc="Projects whose repo has uncommitted changes on the last scan. Click to filter." iconColor="text-orange-400" />
+              </div>
+            </Card>
+            <Card className="mb-3">
+              <SubHeading>Filter toolbar</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={CheckCircle2} label="Status pills" desc="All / Active / Paused / Done / Idea — click to filter by status. Count badge updates live." iconColor="text-green-400" />
+                <FeatureRow icon={Activity} label="Search" desc="Filters by project name and description in real time as you type." iconColor="text-slate-400" />
+                <FeatureRow icon={CheckCircle2} label="Phase / Priority dropdowns" desc="Filter the list to a specific phase (Planning, Core Build, etc.) or priority level." iconColor="text-slate-400" />
+                <FeatureRow icon={GitBranch} label="Dirty / Stale toggles" desc="Quick filters to show only repos with uncommitted changes or projects that haven't been scanned recently." iconColor="text-orange-400" />
+                <FeatureRow icon={BarChart3} label="Sort" desc="Sort by name, last updated, status, or priority." iconColor="text-slate-400" />
+                <FeatureRow icon={Activity} label="List / Grid toggle" desc="Switch between a compact row view and a card grid layout." iconColor="text-slate-400" />
               </div>
             </Card>
             <Card>
-              <SubHeading>Status filter tabs</SubHeading>
-              <p className="text-xs text-slate-500 mb-3">
-                Click a status tab (All / Active / Paused / Done / Idea) to filter the project list below the stats.
-                The count badge on each tab updates live.
+              <SubHeading>Actions</SubHeading>
+              <p className="text-xs text-slate-500 mb-2">
+                <strong className="text-slate-300">Scan All</strong> runs a git scan on every project with a linked repo.
+                The <strong className="text-slate-300">New</strong> button (brain icon, top right) opens the New Project Wizard.
               </p>
-              <SubHeading>Project cards</SubHeading>
               <p className="text-xs text-slate-500">
-                Each card shows the project name, status badge, phase, priority dot, health dot, last scan time,
-                and a git dirty indicator. Click any card to open the full Project Detail view.
+                Click any project row or card to open the full Project Detail view.
               </p>
             </Card>
           </section>
@@ -220,30 +229,63 @@ export default function Manual() {
               id="new-project"
               icon={Wand2}
               title="New Project Wizard"
-              subtitle="Create a Claude-ready project with docs, skills, and structure"
+              subtitle="Two modes: build a full scaffold from scratch, or track an existing project"
             />
             <Card className="mb-3">
               <p className="text-xs text-slate-500 mb-3">
-                Click <strong className="text-slate-300">+ New Project</strong> on the Dashboard to open
-                the wizard. It walks you through three steps, then generates a full project folder on disk —
-                complete with structured markdown docs and optional Claude skills files.
+                Click the <strong className="text-slate-300">New</strong> button (brain icon, top right of Projects)
+                to open the wizard. The first screen asks which mode you want:
               </p>
-              <SubHeading>Steps</SubHeading>
-              <div className="space-y-0">
-                <FeatureRow icon={CheckCircle2} label="1. About" desc="Project name (required), short description, project type (Web app / Desktop app / API / Internal tool / Docs site), and main goal." iconColor="text-green-400" />
-                <FeatureRow icon={CheckCircle2} label="2. Setup" desc="Starter template (Next.js, Tauri, React, Blank, Docs site), stack add-ons (Supabase, Tailwind CSS, Stripe, etc.), and any key constraints." iconColor="text-blue-400" />
-                <FeatureRow icon={CheckCircle2} label="3. Options" desc="Preferred coding style, UI style, whether to initialise a Git repo, and whether to generate Claude skill files." iconColor="text-violet-400" />
+              <div className="space-y-0 mb-3">
+                <FeatureRow
+                  icon={Hammer}
+                  label="Build from scratch"
+                  desc="Scaffold a complete Next.js 15 + Supabase project, write all planning docs and Claude skills, set up git, and optionally create GitHub / Vercel / Supabase — all in one action."
+                  iconColor="text-violet-400"
+                />
+                <FeatureRow
+                  icon={FolderOpen}
+                  label="Track existing project"
+                  desc="Import a repo you're already working on. Creates the project record, generates planning docs, and optionally adds Claude skills to the folder on disk."
+                  iconColor="text-slate-400"
+                />
               </div>
-              <p className="text-xs text-slate-500 mt-3">
+              <p className="text-xs text-slate-500">
                 The <strong className="text-slate-300">Default projects directory</strong> must be set in
-                Settings → Integrations &amp; Scaffold before the wizard can create a folder.
-                If it is missing, the wizard will warn you with a link to Settings.
+                Settings → Integrations &amp; Scaffold before using Build from scratch.
               </p>
             </Card>
+
+            <Card className="mb-3">
+              <SubHeading>Build from scratch — 2 steps</SubHeading>
+              <div className="space-y-0 mb-3">
+                <FeatureRow icon={CheckCircle2} label="1. About" desc="Project name (required), short description, and main goal. The goal is used to pre-populate planning docs." iconColor="text-green-400" />
+                <FeatureRow icon={CheckCircle2} label="2. Cloud" desc="Choose whether to generate Claude skills, and which cloud services to set up: GitHub repo (requires gh CLI), Vercel project, and Supabase project." iconColor="text-violet-400" />
+              </div>
+              <p className="text-xs text-slate-500 mb-2">
+                Click <strong className="text-slate-300">Scaffold &amp; create</strong> to start. A progress panel tracks
+                each step as it runs — files, docs, skills, git, cloud services, and database record. Everything
+                is committed in a single initial git commit so your repo starts clean.
+              </p>
+              <p className="text-xs text-slate-500">
+                When complete, click <strong className="text-slate-300">Open Project →</strong> to go straight
+                to the project detail view.
+              </p>
+            </Card>
+
+            <Card className="mb-3">
+              <SubHeading>Track existing — 3 steps</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={CheckCircle2} label="1. About" desc="Project name, description, project type, and main goal." iconColor="text-green-400" />
+                <FeatureRow icon={CheckCircle2} label="2. Setup" desc="Starter template, stack add-ons, and key constraints (used to populate docs)." iconColor="text-blue-400" />
+                <FeatureRow icon={CheckCircle2} label="3. Options" desc="Coding style, UI style, and whether to initialise a git repo and generate Claude skills." iconColor="text-violet-400" />
+              </div>
+            </Card>
+
             <Card className="mb-3">
               <SubHeading>Generated markdown docs — 11 files</SubHeading>
               <p className="text-xs text-slate-500 mb-3">
-                All docs are pre-populated with your project name, description, template, add-ons, and goal.
+                Both modes generate the same set of planning docs, pre-populated with your project details.
                 They are living documents — keep them updated as the project evolves.
               </p>
               <div className="grid grid-cols-1 gap-0">
@@ -271,10 +313,10 @@ export default function Manual() {
               </div>
             </Card>
             <Card>
-              <SubHeading>Generated Claude skills — 7 files in .claude/skills/</SubHeading>
+              <SubHeading>Claude skills — 7 files in .claude/skills/</SubHeading>
               <p className="text-xs text-slate-500 mb-3">
                 Skill files are plain markdown. Claude Code reads them when you invoke the skill by name.
-                All 7 are generated when <strong className="text-slate-300">Generate Claude skills</strong> is enabled in step 3.
+                Generated when <strong className="text-slate-300">Generate Claude skills</strong> is enabled.
               </p>
               <div className="space-y-0">
                 <FeatureRow icon={Bot}          label="project-kickoff"     desc="Read project docs and propose a scoped task plan before writing any code." iconColor="text-violet-400" />
@@ -293,52 +335,28 @@ export default function Manual() {
             <SectionHeading
               id="projects"
               icon={FolderKanban}
-              title="Projects"
-              subtitle="Full project list with advanced filtering and sorting"
+              title="Managing Projects"
+              subtitle="Editing, deleting, and maintaining project metadata"
             />
             <Card className="mb-3">
-              <SubHeading>Creating a project</SubHeading>
-              <p className="text-xs text-slate-500 mb-3">
-                Click <strong className="text-slate-300">+ New Project</strong> (top-right of Projects or Dashboard).
-                Fill in:
-              </p>
-              <div className="space-y-0">
-                <FeatureRow icon={CheckCircle2} label="Name" desc="Short identifier for the project." iconColor="text-green-400" />
-                <FeatureRow icon={CheckCircle2} label="Description" desc="One-line summary of what the project does." iconColor="text-green-400" />
-                <FeatureRow icon={CheckCircle2} label="Local repo path" desc="Absolute path to the folder on disk (optional — can be linked later)." iconColor="text-slate-500" />
-                <FeatureRow icon={CheckCircle2} label="Status / Phase / Priority / AI tool" desc="Metadata fields for filtering and tracking." iconColor="text-slate-500" />
-              </div>
-            </Card>
-            <Card className="mb-3">
-              <SubHeading>Scaffold from scratch</SubHeading>
+              <SubHeading>Editing a project</SubHeading>
               <p className="text-xs text-slate-500 mb-2">
-                When creating a new project, enable <strong className="text-slate-300">Create from scratch</strong>{' '}
-                to scaffold a full Next.js 15 + TypeScript + Tailwind v4 + Supabase starter. Project Tracker will:
+                Open a project then click the <strong className="text-slate-300">Edit</strong> button (pencil icon)
+                in the detail header to update name, description, local repo path, status, phase, priority,
+                AI tool, startup command, and Claude settings.
               </p>
-              <div className="space-y-0">
-                <FeatureRow icon={Sparkles} label="Generate boilerplate" desc="Creates package.json, tsconfig, next.config, Tailwind, Supabase helpers, middleware, and env files." iconColor="text-amber-400" />
-                <FeatureRow icon={GitBranch} label="Git init + commit" desc="Runs git init and makes an initial commit automatically." iconColor="text-cyan-400" />
-                <FeatureRow icon={CheckCircle2} label="GitHub / Vercel / Supabase" desc="Optionally creates a GitHub repo (requires gh CLI), deploys to Vercel, and provisions a Supabase project. Tokens must be set in Settings first." iconColor="text-slate-400" />
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                The default projects directory must be set in{' '}
-                <strong className="text-slate-300">Settings → Integrations &amp; Scaffold</strong> before scaffolding.
+              <p className="text-xs text-slate-500">
+                If the repo folder was moved to a different location, use the{' '}
+                <strong className="text-slate-300">Relink Repo Path</strong> button (link icon) to update
+                just the path without touching any other metadata.
               </p>
             </Card>
             <Card>
-              <SubHeading>Filtering &amp; sorting</SubHeading>
-              <p className="text-xs text-slate-500 mb-3">
-                The Projects page has filter controls for <strong className="text-slate-300">phase</strong>,{' '}
-                <strong className="text-slate-300">priority</strong>, and quick toggles for{' '}
-                <strong className="text-slate-300">Dirty</strong> and{' '}
-                <strong className="text-slate-300">Stale</strong> projects.
-                The search box filters by name/description in real time.
-              </p>
-              <SubHeading>Editing &amp; deleting</SubHeading>
+              <SubHeading>Deleting a project</SubHeading>
               <p className="text-xs text-slate-500">
-                Open a project then click the <strong className="text-slate-300">Edit</strong> button (pencil icon)
-                in the detail header. To delete, use the trash icon — you'll be asked to confirm.
-                Deletion is permanent and removes all associated scans, documents, and plan data.
+                Use the trash icon in the project detail header. You'll be asked to confirm.
+                Deletion is permanent and removes all associated scans, documents, plan phases/tasks, and session data.
+                It does <strong className="text-slate-300">not</strong> delete any files on disk.
               </p>
             </Card>
           </section>
