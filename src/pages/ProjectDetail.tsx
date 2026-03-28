@@ -146,7 +146,7 @@ export default function ProjectDetail() {
     try {
       setDeleting(true);
       await deleteProject(projectId);
-      navigate('/projects');
+      navigate('/');
     } catch (e) {
       setActionError(String(e));
       setDeleting(false);
@@ -287,7 +287,7 @@ export default function ProjectDetail() {
         {/* Title row */}
         <div className="flex items-center gap-3 px-5 py-3">
           <button
-            onClick={() => navigate('/projects')}
+            onClick={() => navigate('/')}
             className="p-1 -ml-1 rounded text-slate-500 hover:text-slate-300 hover:bg-hover transition-colors cursor-default shrink-0"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>

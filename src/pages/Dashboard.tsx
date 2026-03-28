@@ -1,15 +1,20 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FolderKanban, Activity, AlertCircle, Clock,
-  CheckCircle2, GitBranch, Zap, Plus, Loader2, RefreshCw,
+  FolderKanban, Activity, AlertCircle, Clock, CheckCircle2, GitBranch, Zap,
+  Plus, Loader2, RefreshCw, Search, LayoutList, LayoutGrid,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { DashboardStats, InProgressTask, Project } from '../lib/types';
-import { getDashboardStats, getInProgressTasks, getProjects, scanProject } from '../lib/api';
+import type { DashboardStats, InProgressTask, Project, ProjectScan } from '../lib/types';
+import {
+  getDashboardStats, getInProgressTasks, getProjects, getProjectScans,
+  scanProject, updateProjectStatus,
+} from '../lib/api';
+import { ALL_PHASES, PHASE_LABELS, ALL_PRIORITIES, PRIORITY_LABELS } from '../lib/types';
 import { StatusBadge } from '../components/StatusBadge';
 import { PhaseBadge } from '../components/PhaseBadge';
 import { HealthDot } from '../components/HealthDot';
+import { ProjectCard } from '../components/ProjectCard';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Button } from '../components/ui/Button';
@@ -33,15 +38,22 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [latestScans, setLatestScans] = useState<Record<number, ProjectScan>>({});
   const [inProgressTasks, setInProgressTasks] = useState<InProgressTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>(() => loadPref('pt:dash:status', 'all'));
+  const [query, setQuery] = useState('');
+  const [phaseFilter, setPhaseFilter] = useState<string>(() => loadPref('pt:list:phase', 'all'));
+  const [priorityFilter, setPriorityFilter] = useState<string>(() => loadPref('pt:list:priority', 'all'));
+  const [dirtyOnly, setDirtyOnly] = useState(false);
+  const [staleOnly, setStaleOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'updated_at' | 'last_scanned_at' | 'priority' | 'name'>(
-    () => loadPref('pt:dash:sort', 'updated_at')
+    () => loadPref('pt:dash:sort', 'updated_at'),
   );
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => loadPref('pt:list:view', 'list'));
   const [wizardOpen, setWizardOpen] = useState(false);
 
   async function load() {
@@ -53,6 +65,17 @@ export default function Dashboard() {
       setStats(s);
       setAllProjects(projects);
       setInProgressTasks(tasks);
+
+      // Fetch latest scan for projects that have been scanned (for health + dirty filter)
+      const scanned = projects.filter((p) => p.last_scanned_at);
+      const scanMap: Record<number, ProjectScan> = {};
+      await Promise.all(
+        scanned.map(async (p) => {
+          const scans = await getProjectScans(p.id, 1);
+          if (scans[0]) scanMap[p.id] = scans[0];
+        }),
+      );
+      setLatestScans(scanMap);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -76,6 +99,20 @@ export default function Dashboard() {
     setTimeout(() => setScanResult(null), 5000);
   }
 
+  function handleCardScan(projectId: number): Promise<ProjectScan> {
+    return scanProject(projectId).then((scan) => {
+      setLatestScans((prev) => ({ ...prev, [projectId]: scan }));
+      return scan;
+    });
+  }
+
+  function handleCardStatusChange(projectId: number, status: string): Promise<Project> {
+    return updateProjectStatus(projectId, status).then((updated) => {
+      setAllProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      return updated;
+    });
+  }
+
   function handleStatusFilter(s: string) {
     setStatusFilter(s);
     savePref('pt:dash:status', s);
@@ -86,9 +123,39 @@ export default function Dashboard() {
     savePref('pt:dash:sort', s);
   }
 
+  function toggleView(v: 'list' | 'grid') {
+    setViewMode(v);
+    savePref('pt:list:view', v);
+  }
+
+  function clearFilters() {
+    setQuery('');
+    handleStatusFilter('all');
+    setPhaseFilter('all'); savePref('pt:list:phase', 'all');
+    setPriorityFilter('all'); savePref('pt:list:priority', 'all');
+    setDirtyOnly(false);
+    setStaleOnly(false);
+  }
+
   const filtered = useMemo(() => {
-    let list = statusFilter === 'all' ? [...allProjects]
-      : allProjects.filter((p) => p.status === statusFilter);
+    const list = allProjects.filter((p) => {
+      const matchStatus = statusFilter === 'all' || p.status === statusFilter;
+      const matchQuery =
+        query.trim() === '' ||
+        p.name.toLowerCase().includes(query.toLowerCase()) ||
+        p.description.toLowerCase().includes(query.toLowerCase()) ||
+        p.current_task.toLowerCase().includes(query.toLowerCase());
+      const matchPhase = phaseFilter === 'all' || p.phase === phaseFilter;
+      const matchPriority = priorityFilter === 'all' || p.priority === priorityFilter;
+      const scan = latestScans[p.id];
+      const matchDirty = !dirtyOnly || (scan?.is_dirty ?? false);
+      const matchStale = !staleOnly || (
+        p.status !== 'done' &&
+        p.local_repo_path.trim() !== '' &&
+        isOlderThanDays(p.last_scanned_at, 7)
+      );
+      return matchStatus && matchQuery && matchPhase && matchPriority && matchDirty && matchStale;
+    });
     list.sort((a, b) => {
       if (sortBy === 'priority') return (PRIORITY_ORD[a.priority] ?? 2) - (PRIORITY_ORD[b.priority] ?? 2);
       if (sortBy === 'name') return a.name.localeCompare(b.name);
@@ -96,32 +163,30 @@ export default function Dashboard() {
       const bv = (sortBy === 'last_scanned_at' ? b.last_scanned_at : b.updated_at) ?? '';
       return bv.localeCompare(av);
     });
-    return list.slice(0, 20);
-  }, [allProjects, statusFilter, sortBy]);
+    return list;
+  }, [allProjects, statusFilter, query, phaseFilter, priorityFilter, dirtyOnly, staleOnly, sortBy, latestScans]);
 
-  // Tasks currently marked in_progress across all projects
   const inFocus = inProgressTasks.slice(0, 10);
 
-  // Projects that need operator attention: blocked or stale with a repo
   const needsAttention = useMemo(() =>
-    allProjects.filter(p => {
+    allProjects.filter((p) => {
       if (p.status === 'done') return false;
-      const blocked = p.blocker.trim() !== '';
-      const stale = p.local_repo_path.trim() !== '' && isOlderThanDays(p.last_scanned_at, 7);
-      return blocked || stale;
+      return p.blocker.trim() !== '' || (
+        p.local_repo_path.trim() !== '' && isOlderThanDays(p.last_scanned_at, 7)
+      );
     }).slice(0, 7),
-    [allProjects]
+    [allProjects],
   );
 
-  // Most recent scan across all projects
   const lastScanTime = useMemo(() =>
     allProjects
-      .filter(p => p.last_scanned_at)
-      .map(p => p.last_scanned_at!)
+      .filter((p) => p.last_scanned_at)
+      .map((p) => p.last_scanned_at!)
       .sort().reverse()[0] ?? null,
-    [allProjects]
+    [allProjects],
   );
 
+  const hasActiveFilters = statusFilter !== 'all' || query.trim() !== '' || phaseFilter !== 'all' || priorityFilter !== 'all' || dirtyOnly || staleOnly;
   const isScanning = scanProgress !== null;
 
   const subtitle = stats
@@ -133,7 +198,7 @@ export default function Dashboard() {
       {(scanProgress || scanResult) && (
         <span className="text-xs text-slate-500">{scanProgress ?? scanResult}</span>
       )}
-      <Button variant="ghost" size="sm" onClick={handleScanAll} disabled={isScanning || allProjects.every(p => !p.local_repo_path.trim())}>
+      <Button variant="ghost" size="sm" onClick={handleScanAll} disabled={isScanning || allProjects.every((p) => !p.local_repo_path.trim())}>
         {isScanning ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
         Scan All
       </Button>
@@ -146,15 +211,15 @@ export default function Dashboard() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader title="Dashboard" subtitle={subtitle} actions={headerActions} />
+      <PageHeader title="Projects" subtitle={subtitle} actions={headerActions} />
       <div className="flex-1 overflow-y-auto">
         <NewProjectWizard
-        open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
-        onCreated={(id) => { setWizardOpen(false); load(); navigate(`/projects/${id}`); }}
-      />
+          open={wizardOpen}
+          onClose={() => setWizardOpen(false)}
+          onCreated={(id) => { setWizardOpen(false); load(); navigate(`/projects/${id}`); }}
+        />
 
-      {loading ? (
+        {loading ? (
           <Spinner />
         ) : error ? (
           <div className="px-5 py-4 max-w-5xl mx-auto">
@@ -165,42 +230,42 @@ export default function Dashboard() {
 
             {/* ── Stats strip ─────────────────────────────────────── */}
             <div className="flex gap-3">
-              {/* Status group — distribution across lifecycle states */}
               <div className="flex-1 bg-card border border-border rounded-lg overflow-hidden flex">
                 <MetricCell
                   label="Total" value={stats.total} icon={FolderKanban} iconCls="text-violet-400"
-                  onClick={() => navigate('/projects')}
+                  onClick={() => handleStatusFilter('all')}
                 />
                 <MetricCell sep
                   label="Active" value={stats.active} icon={Activity} iconCls="text-green-400"
-                  onClick={() => { handleStatusFilter('active'); navigate('/projects?status=active'); }}
+                  onClick={() => handleStatusFilter('active')}
                 />
                 <MetricCell sep
                   label="Paused" value={stats.paused} icon={Clock} iconCls="text-yellow-500"
                   dim={stats.paused === 0}
-                  onClick={() => { handleStatusFilter('paused'); navigate('/projects?status=paused'); }}
+                  onClick={() => handleStatusFilter('paused')}
                 />
                 <MetricCell sep
                   label="Done" value={stats.done} icon={CheckCircle2} iconCls="text-slate-500"
                   dim
-                  onClick={() => { handleStatusFilter('done'); navigate('/projects?status=done'); }}
+                  onClick={() => handleStatusFilter('done')}
                 />
               </div>
 
-              {/* Health group — operational concerns that need action */}
               <div className="bg-card border border-border rounded-lg overflow-hidden flex">
                 <MetricCell
                   label="Blocked" value={stats.blocked} icon={AlertCircle} iconCls="text-red-400"
                   alertBg={stats.blocked > 0 ? 'bg-red-500/8' : undefined}
-                  onClick={() => { handleStatusFilter('blocked'); navigate('/projects?status=blocked'); }}
+                  onClick={() => handleStatusFilter('blocked')}
                 />
                 <MetricCell sep
                   label="Stale" value={stats.stale} icon={Zap} iconCls="text-orange-400"
                   alertBg={stats.stale > 0 ? 'bg-orange-500/8' : undefined}
+                  onClick={() => { setStaleOnly(true); handleStatusFilter('all'); }}
                 />
                 <MetricCell sep
                   label="Dirty" value={stats.dirty_repos} icon={GitBranch} iconCls="text-blue-400"
                   alertBg={stats.dirty_repos > 0 ? 'bg-blue-500/8' : undefined}
+                  onClick={() => { setDirtyOnly(true); handleStatusFilter('all'); }}
                 />
               </div>
             </div>
@@ -208,73 +273,167 @@ export default function Dashboard() {
             {/* ── Two-column workspace ─────────────────────────────── */}
             <div className="flex gap-4 items-start">
 
-              {/* Left: project list — primary workspace surface */}
+              {/* Left: project list */}
               <div className="flex-1 min-w-0">
                 {/* Toolbar */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="flex bg-surface border border-border rounded p-0.5 gap-0.5">
-                      {STATUS_OPTIONS.map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => handleStatusFilter(s)}
-                          className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-default ${
-                            statusFilter === s
-                              ? 'bg-violet-600 text-white'
-                              : 'text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {STATUS_PILL_LABELS[s]}
-                        </button>
-                      ))}
-                    </div>
-                    {allProjects.length > 0 && (
-                      <span className="text-[11px] text-slate-700">
-                        {filtered.length}{allProjects.length > 20 && statusFilter === 'all' ? ` of ${allProjects.length}` : ''}
-                        {' '}project{filtered.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                  {/* Status pills */}
+                  <div className="flex bg-surface border border-border rounded p-0.5 gap-0.5">
+                    {STATUS_OPTIONS.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => handleStatusFilter(s)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-default ${
+                          statusFilter === s
+                            ? 'bg-violet-600 text-white'
+                            : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        {STATUS_PILL_LABELS[s]}
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-2">
+
+                  {/* Search */}
+                  <div className="flex items-center gap-1.5 bg-surface border border-border rounded px-2 py-0.5 w-[130px]">
+                    <Search size={11} className="text-slate-600 shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Search…"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      className="flex-1 bg-transparent text-[11px] text-slate-300 placeholder-slate-600 outline-none min-w-0"
+                    />
+                  </div>
+
+                  {/* Phase */}
+                  <select
+                    value={phaseFilter}
+                    onChange={(e) => { setPhaseFilter(e.target.value); savePref('pt:list:phase', e.target.value); }}
+                    className="bg-surface border border-border rounded px-2 py-0.5 text-[11px] text-slate-400 outline-none"
+                  >
+                    <option value="all">All Phases</option>
+                    {ALL_PHASES.map((ph) => (
+                      <option key={ph} value={ph}>{PHASE_LABELS[ph]}</option>
+                    ))}
+                  </select>
+
+                  {/* Priority */}
+                  <select
+                    value={priorityFilter}
+                    onChange={(e) => { setPriorityFilter(e.target.value); savePref('pt:list:priority', e.target.value); }}
+                    className="bg-surface border border-border rounded px-2 py-0.5 text-[11px] text-slate-400 outline-none"
+                  >
+                    <option value="all">All Priorities</option>
+                    {ALL_PRIORITIES.map((pr) => (
+                      <option key={pr} value={pr}>{PRIORITY_LABELS[pr]}</option>
+                    ))}
+                  </select>
+
+                  {/* Dirty / Stale toggles */}
+                  <button
+                    onClick={() => setDirtyOnly((v) => !v)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-default ${
+                      dirtyOnly
+                        ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400'
+                        : 'bg-surface border-border text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    ● Dirty
+                  </button>
+                  <button
+                    onClick={() => setStaleOnly((v) => !v)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-default ${
+                      staleOnly
+                        ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
+                        : 'bg-surface border-border text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    ⚡ Stale
+                  </button>
+
+                  {/* Sort + view — push right */}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    {hasActiveFilters && (
+                      <button
+                        onClick={clearFilters}
+                        className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors cursor-default"
+                      >
+                        × Clear
+                      </button>
+                    )}
                     <select
                       value={sortBy}
                       onChange={(e) => handleSortBy(e.target.value as typeof sortBy)}
-                      className="bg-surface border border-border rounded px-2 py-0.5 text-[11px] text-slate-400 outline-none cursor-default"
+                      className="bg-surface border border-border rounded px-2 py-0.5 text-[11px] text-slate-400 outline-none"
                     >
                       <option value="updated_at">Updated</option>
                       <option value="last_scanned_at">Scanned</option>
                       <option value="priority">Priority</option>
                       <option value="name">Name</option>
                     </select>
-                    <button
-                      onClick={() => navigate('/projects')}
-                      className="text-[11px] text-violet-400 hover:text-violet-300 transition-colors whitespace-nowrap cursor-default"
-                    >
-                      All projects →
-                    </button>
+                    <div className="flex bg-surface border border-border rounded p-0.5 gap-0.5">
+                      <button
+                        onClick={() => toggleView('list')}
+                        className={`p-1 rounded cursor-default transition-colors ${viewMode === 'list' ? 'bg-hover text-slate-200' : 'text-slate-600 hover:text-slate-400'}`}
+                        title="List view"
+                      >
+                        <LayoutList size={12} />
+                      </button>
+                      <button
+                        onClick={() => toggleView('grid')}
+                        className={`p-1 rounded cursor-default transition-colors ${viewMode === 'grid' ? 'bg-hover text-slate-200' : 'text-slate-600 hover:text-slate-400'}`}
+                        title="Grid view"
+                      >
+                        <LayoutGrid size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {/* Project rows */}
-                {filtered.length === 0 ? (
+                {/* Project list / grid */}
+                {allProjects.length === 0 ? (
                   <EmptyState
                     icon={<FolderKanban size={20} />}
-                    title={statusFilter !== 'all' ? `No ${STATUS_PILL_LABELS[statusFilter].toLowerCase()} projects` : 'No projects yet'}
-                    description={statusFilter === 'all' ? 'Add your first project to get started' : undefined}
+                    title="No projects yet"
+                    description="Track your AI vibe-coding projects here"
                     action={
-                      statusFilter === 'all' ? (
-                        <Button variant="primary" size="sm" onClick={() => navigate('/projects/new')}>
-                          <Plus size={12} /> New Project
-                        </Button>
-                      ) : undefined
+                      <Button variant="primary" size="sm" onClick={() => setWizardOpen(true)}>
+                        <Plus size={12} /> New Project
+                      </Button>
                     }
                   />
+                ) : filtered.length === 0 ? (
+                  <EmptyState
+                    title="No projects match your filters"
+                    action={
+                      <button
+                        onClick={clearFilters}
+                        className="text-xs text-violet-400 hover:text-violet-300 transition-colors cursor-default"
+                      >
+                        × Clear filters
+                      </button>
+                    }
+                  />
+                ) : viewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {filtered.map((p) => (
+                      <ProjectCard
+                        key={p.id}
+                        project={p}
+                        latestScan={latestScans[p.id] ?? null}
+                        onScan={() => handleCardScan(p.id)}
+                        onStatusChange={(status) => handleCardStatusChange(p.id, status)}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div className="border border-border rounded-lg overflow-hidden">
                     {filtered.map((p, i) => (
                       <ProjectRow
                         key={p.id}
                         project={p}
+                        latestScan={latestScans[p.id] ?? null}
                         isLast={i === filtered.length - 1}
                         onClick={() => navigate(`/projects/${p.id}`)}
                       />
@@ -284,9 +443,9 @@ export default function Dashboard() {
               </div>
 
               {/* Right: operational panels */}
-              <div className="w-[220px] shrink-0 space-y-3">
+              <div className="w-[200px] shrink-0 space-y-3">
 
-                {/* In Focus — active projects with a current task */}
+                {/* In Focus */}
                 <div className="bg-card border border-border rounded-lg overflow-hidden">
                   <div className="px-3 py-2 border-b border-border-subtle">
                     <SectionLabel>In Focus</SectionLabel>
@@ -317,7 +476,7 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {/* Needs Attention — blocked or stale */}
+                {/* Needs Attention */}
                 {needsAttention.length > 0 ? (
                   <div className="bg-card border border-border rounded-lg overflow-hidden">
                     <div className="px-3 py-2 border-b border-border-subtle">
@@ -354,7 +513,6 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ) : allProjects.length > 0 ? (
-                  /* All-clear state */
                   <div className="bg-card border border-border rounded-lg px-3 py-2.5 flex items-center gap-2">
                     <CheckCircle2 size={11} className="text-green-400 shrink-0" />
                     <span className="text-[11px] text-slate-700">No blocked or stale projects</span>
@@ -370,7 +528,7 @@ export default function Dashboard() {
   );
 }
 
-// ── Metric cell for stats strip ────────────────────────────────────────────────
+// ── Metric cell ─────────────────────────────────────────────────────────────────
 
 function MetricCell({
   label, value, icon: Icon, iconCls, dim, alertBg, sep, onClick,
@@ -381,7 +539,7 @@ function MetricCell({
   iconCls: string;
   dim?: boolean;
   alertBg?: string;
-  sep?: boolean;       // render left border separator
+  sep?: boolean;
   onClick?: () => void;
 }) {
   const isAlert = alertBg !== undefined;
@@ -411,14 +569,14 @@ function MetricCell({
   );
 }
 
-// ── Project row ────────────────────────────────────────────────────────────────
+// ── Project row ─────────────────────────────────────────────────────────────────
 
 function ProjectRow({
-  project: p, isLast, onClick,
+  project: p, latestScan, isLast, onClick,
 }: {
-  project: Project; isLast: boolean; onClick: () => void;
+  project: Project; latestScan: ProjectScan | null; isLast: boolean; onClick: () => void;
 }) {
-  const health = computeHealth(p, undefined);
+  const health = computeHealth(p, latestScan ?? undefined);
   return (
     <div
       onClick={onClick}
@@ -426,14 +584,9 @@ function ProjectRow({
         !isLast ? 'border-b border-border-subtle' : ''
       }`}
     >
-      {/* Priority accent bar */}
       <div className={`w-0.5 shrink-0 ${PRIORITY_BAR[p.priority] ?? 'bg-transparent'}`} />
-
-      {/* Row content */}
       <div className="flex items-center gap-3 px-3 py-2.5 flex-1 min-w-0">
         <HealthDot level={health} />
-
-        {/* Name + current task stacked */}
         <div className="flex-1 min-w-0">
           <div className="text-sm text-slate-300 font-medium truncate group-hover:text-slate-100 transition-colors">
             {p.name}
@@ -444,14 +597,15 @@ function ProjectRow({
             </div>
           )}
         </div>
-
-        {/* Status + phase */}
         <div className="flex items-center gap-1 shrink-0">
           <StatusBadge status={p.status} />
           <PhaseBadge phase={p.phase} />
+          {p.blocker && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 text-[11px]">
+              ⊘
+            </span>
+          )}
         </div>
-
-        {/* Timestamp */}
         <span className="text-[11px] text-slate-600 shrink-0 w-[88px] text-right hidden sm:block">
           {projectTimestampLabel(p)}
         </span>
@@ -460,7 +614,7 @@ function ProjectRow({
   );
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────────
+// ── Utilities ───────────────────────────────────────────────────────────────────
 
 function Spinner() {
   return (

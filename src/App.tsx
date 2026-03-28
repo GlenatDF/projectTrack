@@ -1,7 +1,6 @@
 import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import Dashboard from './pages/Dashboard';
-import ProjectList from './pages/ProjectList';
 import ProjectDetail from './pages/ProjectDetail';
 import AddEditProject from './pages/AddEditProject';
 import Settings from './pages/Settings';
@@ -14,7 +13,6 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/projects" element={<ProjectList />} />
           <Route path="/projects/new" element={<AddEditProject />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/projects/:id/edit" element={<AddEditProject />} />

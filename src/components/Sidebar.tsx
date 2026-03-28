@@ -1,10 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, FolderSearch, Settings, Loader2, BookOpen } from 'lucide-react';
+import { FolderKanban, FolderSearch, Settings, Loader2, BookOpen } from 'lucide-react';
 import type { AutoScanState } from './Layout';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/projects', label: 'Projects', icon: FolderKanban, end: false },
+  { to: '/', label: 'Projects', icon: FolderKanban, end: true },
   { to: '/discover', label: 'Discover', icon: FolderSearch, end: true },
   { to: '/settings', label: 'Settings', icon: Settings, end: true },
   { to: '/manual', label: 'Manual', icon: BookOpen, end: true },

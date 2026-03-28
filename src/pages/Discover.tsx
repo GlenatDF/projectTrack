@@ -152,7 +152,7 @@ export default function Discover() {
                 {importResult}
               </span>
               <Link
-                to="/projects"
+                to="/"
                 className="flex items-center gap-1 text-green-300 hover:text-green-200 font-medium cursor-default"
               >
                 View Projects <ArrowRight size={11} />
