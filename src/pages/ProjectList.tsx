@@ -12,7 +12,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Button } from '../components/ui/Button';
 import { loadPref, savePref, projectTimestampLabel } from '../lib/utils';
-import { isOlderThanDays, computeHealth } from '../lib/health';
+import { computeHealth } from '../lib/health';
 
 const PRIORITY_ORD: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
@@ -28,7 +28,6 @@ export default function ProjectList() {
   const [phaseFilter, setPhaseFilter] = useState<string>(() => loadPref('pt:list:phase', 'all'));
   const [priorityFilter, setPriorityFilter] = useState<string>(() => loadPref('pt:list:priority', 'all'));
   const [dirtyOnly, setDirtyOnly] = useState(false);
-  const [staleOnly, setStaleOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'updated_at' | 'last_scanned_at' | 'priority' | 'name'>(
     () => loadPref('pt:list:sort', 'updated_at')
   );
@@ -106,12 +105,7 @@ export default function ProjectList() {
       const matchPriority = priorityFilter === 'all' || p.priority === priorityFilter;
       const scan = latestScans[p.id];
       const matchDirty = !dirtyOnly || (scan?.is_dirty ?? false);
-      const matchStale = !staleOnly || (
-        p.status !== 'done' &&
-        p.local_repo_path.trim() !== '' &&
-        isOlderThanDays(p.last_scanned_at, 7)
-      );
-      return matchStatus && matchQuery && matchPhase && matchPriority && matchDirty && matchStale;
+      return matchStatus && matchQuery && matchPhase && matchPriority && matchDirty;
     });
 
     list.sort((a, b) => {
@@ -123,7 +117,7 @@ export default function ProjectList() {
     });
 
     return list;
-  }, [projects, statusFilter, query, phaseFilter, priorityFilter, dirtyOnly, staleOnly, sortBy, latestScans]);
+  }, [projects, statusFilter, query, phaseFilter, priorityFilter, dirtyOnly, sortBy, latestScans]);
 
   function setStatus(s: string) {
     if (s === 'all') setSearchParams({});
@@ -136,7 +130,6 @@ export default function ProjectList() {
     setPhaseFilter('all');
     setPriorityFilter('all');
     setDirtyOnly(false);
-    setStaleOnly(false);
   }
 
   function toggleView(v: 'list' | 'grid') {
@@ -177,17 +170,22 @@ export default function ProjectList() {
         <div className="px-5 py-4 max-w-5xl mx-auto space-y-3">
           {/* Toolbar */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Status tabs */}
+            {/* Filter pills */}
             <div className="flex bg-surface border border-border rounded p-0.5 gap-0.5">
-              <FilterTab label="All" active={statusFilter === 'all'} onClick={() => setStatus('all')} />
+              <FilterTab label="All" active={statusFilter === 'all' && !dirtyOnly} onClick={() => { setStatus('all'); setDirtyOnly(false); }} />
               {ALL_STATUSES.map((s) => (
                 <FilterTab
                   key={s}
                   label={STATUS_LABELS[s]}
-                  active={statusFilter === s}
-                  onClick={() => setStatus(s)}
+                  active={statusFilter === s && !dirtyOnly}
+                  onClick={() => { setStatus(s); setDirtyOnly(false); }}
                 />
               ))}
+              <FilterTab
+                label="Dirty"
+                active={dirtyOnly}
+                onClick={() => { setStatus('all'); setDirtyOnly((v) => !v); }}
+              />
             </div>
 
             {/* Search */}
@@ -225,29 +223,6 @@ export default function ProjectList() {
                 <option key={pr} value={pr}>{PRIORITY_LABELS[pr]}</option>
               ))}
             </select>
-
-            {/* Toggle filters */}
-            <button
-              onClick={() => setDirtyOnly((v) => !v)}
-              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors border cursor-default ${
-                dirtyOnly
-                  ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400'
-                  : 'bg-surface border-border text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              ● Dirty
-            </button>
-
-            <button
-              onClick={() => setStaleOnly((v) => !v)}
-              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors border cursor-default ${
-                staleOnly
-                  ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
-                  : 'bg-surface border-border text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              ⚡ Stale
-            </button>
 
             {/* Sort + View toggle — right side */}
             <div className="flex items-center gap-1.5 ml-auto">
@@ -369,8 +344,8 @@ function FilterTab({ label, active, onClick }: { label: string; active: boolean;
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-default ${
-        active ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-300'
+      className={`px-3 py-1 rounded text-xs font-medium transition-colors cursor-default ${
+        active ? 'bg-violet-500/10 text-violet-300 ring-1 ring-inset ring-violet-500/40' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
       }`}
     >
       {label}

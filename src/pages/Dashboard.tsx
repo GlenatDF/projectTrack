@@ -1,10 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FolderKanban, Activity, AlertCircle, Clock, CheckCircle2, GitBranch, Zap,
+  FolderKanban, CheckCircle2,
   Brain, Loader2, RefreshCw, Search, LayoutList, LayoutGrid,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import type { DashboardStats, InProgressTask, Project, ProjectScan } from '../lib/types';
 import {
   getDashboardStats, getInProgressTasks, getProjects, getLatestScans,
@@ -23,10 +22,15 @@ import { relativeTime, projectTimestampLabel, loadPref, savePref } from '../lib/
 import { computeHealth, isOlderThanDays } from '../lib/health';
 import { NewProjectWizard } from '../components/NewProjectWizard';
 
-const STATUS_OPTIONS = ['all', 'active', 'blocked', 'paused', 'done'] as const;
-const STATUS_PILL_LABELS: Record<string, string> = {
-  all: 'All', active: 'Active', blocked: 'Blocked', paused: 'Paused', done: 'Done',
-};
+type ActiveFilter = 'all' | 'active' | 'paused' | 'done' | 'blocked' | 'dirty';
+const FILTER_OPTIONS: { value: ActiveFilter; label: string }[] = [
+  { value: 'all',     label: 'All' },
+  { value: 'active',  label: 'Active' },
+  { value: 'paused',  label: 'Paused' },
+  { value: 'done',    label: 'Done' },
+  { value: 'blocked', label: 'Blocked' },
+  { value: 'dirty',   label: 'Dirty' },
+];
 const PRIORITY_ORD: Record<string, number> = { high: 0, medium: 1, low: 2 };
 const PRIORITY_BAR: Record<string, string> = {
   high:   'bg-red-500/60',
@@ -44,12 +48,10 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>(() => loadPref('pt:dash:status', 'all'));
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>(() => loadPref('pt:dash:filter', 'all') as ActiveFilter);
   const [query, setQuery] = useState('');
   const [phaseFilter, setPhaseFilter] = useState<string>(() => loadPref('pt:list:phase', 'all'));
   const [priorityFilter, setPriorityFilter] = useState<string>(() => loadPref('pt:list:priority', 'all'));
-  const [dirtyOnly, setDirtyOnly] = useState(false);
-  const [staleOnly, setStaleOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'updated_at' | 'last_scanned_at' | 'priority' | 'name'>(
     () => loadPref('pt:dash:sort', 'updated_at'),
   );
@@ -112,9 +114,9 @@ export default function Dashboard() {
     });
   }
 
-  function handleStatusFilter(s: string) {
-    setStatusFilter(s);
-    savePref('pt:dash:status', s);
+  function handleFilterChange(f: ActiveFilter) {
+    setActiveFilter(f);
+    savePref('pt:dash:filter', f);
   }
 
   function handleSortBy(s: typeof sortBy) {
@@ -129,16 +131,18 @@ export default function Dashboard() {
 
   function clearFilters() {
     setQuery('');
-    handleStatusFilter('all');
+    handleFilterChange('all');
     setPhaseFilter('all'); savePref('pt:list:phase', 'all');
     setPriorityFilter('all'); savePref('pt:list:priority', 'all');
-    setDirtyOnly(false);
-    setStaleOnly(false);
   }
 
   const filtered = useMemo(() => {
     const list = allProjects.filter((p) => {
-      const matchStatus = statusFilter === 'all' || p.status === statusFilter;
+      const scan = latestScans[p.id];
+      const matchFilter =
+        activeFilter === 'all'     ? true :
+        activeFilter === 'dirty'   ? (scan?.is_dirty ?? false) :
+        p.status === activeFilter;
       const matchQuery =
         query.trim() === '' ||
         p.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -146,14 +150,7 @@ export default function Dashboard() {
         p.current_task.toLowerCase().includes(query.toLowerCase());
       const matchPhase = phaseFilter === 'all' || p.phase === phaseFilter;
       const matchPriority = priorityFilter === 'all' || p.priority === priorityFilter;
-      const scan = latestScans[p.id];
-      const matchDirty = !dirtyOnly || (scan?.is_dirty ?? false);
-      const matchStale = !staleOnly || (
-        p.status !== 'done' &&
-        p.local_repo_path.trim() !== '' &&
-        isOlderThanDays(p.last_scanned_at, 7)
-      );
-      return matchStatus && matchQuery && matchPhase && matchPriority && matchDirty && matchStale;
+      return matchFilter && matchQuery && matchPhase && matchPriority;
     });
     list.sort((a, b) => {
       if (sortBy === 'priority') return (PRIORITY_ORD[a.priority] ?? 2) - (PRIORITY_ORD[b.priority] ?? 2);
@@ -163,7 +160,7 @@ export default function Dashboard() {
       return bv.localeCompare(av);
     });
     return list;
-  }, [allProjects, statusFilter, query, phaseFilter, priorityFilter, dirtyOnly, staleOnly, sortBy, latestScans]);
+  }, [allProjects, activeFilter, query, phaseFilter, priorityFilter, sortBy, latestScans]);
 
   const inFocus = inProgressTasks.slice(0, 10);
 
@@ -185,7 +182,7 @@ export default function Dashboard() {
     [allProjects],
   );
 
-  const hasActiveFilters = statusFilter !== 'all' || query.trim() !== '' || phaseFilter !== 'all' || priorityFilter !== 'all' || dirtyOnly || staleOnly;
+  const hasActiveFilters = activeFilter !== 'all' || query.trim() !== '' || phaseFilter !== 'all' || priorityFilter !== 'all';
   const isScanning = scanProgress !== null;
 
   const subtitle = stats
@@ -227,48 +224,6 @@ export default function Dashboard() {
         ) : stats && (
           <div className="px-5 py-4 max-w-5xl mx-auto space-y-4">
 
-            {/* ── Stats strip ─────────────────────────────────────── */}
-            <div className="flex gap-3">
-              <div className="flex-1 bg-card border border-border rounded-lg overflow-hidden flex">
-                <MetricCell
-                  label="Total" value={stats.total} icon={FolderKanban} iconCls="text-violet-400"
-                  onClick={() => handleStatusFilter('all')}
-                />
-                <MetricCell sep
-                  label="Active" value={stats.active} icon={Activity} iconCls="text-green-400"
-                  onClick={() => handleStatusFilter('active')}
-                />
-                <MetricCell sep
-                  label="Paused" value={stats.paused} icon={Clock} iconCls="text-yellow-500"
-                  dim={stats.paused === 0}
-                  onClick={() => handleStatusFilter('paused')}
-                />
-                <MetricCell sep
-                  label="Done" value={stats.done} icon={CheckCircle2} iconCls="text-slate-500"
-                  dim
-                  onClick={() => handleStatusFilter('done')}
-                />
-              </div>
-
-              <div className="bg-card border border-border rounded-lg overflow-hidden flex">
-                <MetricCell
-                  label="Blocked" value={stats.blocked} icon={AlertCircle} iconCls="text-red-400"
-                  alertBg={stats.blocked > 0 ? 'bg-red-500/8' : undefined}
-                  onClick={() => handleStatusFilter('blocked')}
-                />
-                <MetricCell sep
-                  label="Stale" value={stats.stale} icon={Zap} iconCls="text-orange-400"
-                  alertBg={stats.stale > 0 ? 'bg-orange-500/8' : undefined}
-                  onClick={() => { setStaleOnly(true); handleStatusFilter('all'); }}
-                />
-                <MetricCell sep
-                  label="Dirty" value={stats.dirty_repos} icon={GitBranch} iconCls="text-blue-400"
-                  alertBg={stats.dirty_repos > 0 ? 'bg-blue-500/8' : undefined}
-                  onClick={() => { setDirtyOnly(true); handleStatusFilter('all'); }}
-                />
-              </div>
-            </div>
-
             {/* ── Two-column workspace ─────────────────────────────── */}
             <div className="flex gap-4 items-start">
 
@@ -276,19 +231,19 @@ export default function Dashboard() {
               <div className="flex-1 min-w-0">
                 {/* Toolbar */}
                 <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                  {/* Status pills */}
+                  {/* Unified filter pills */}
                   <div className="flex bg-surface border border-border rounded p-0.5 gap-0.5">
-                    {STATUS_OPTIONS.map((s) => (
+                    {FILTER_OPTIONS.map((f) => (
                       <button
-                        key={s}
-                        onClick={() => handleStatusFilter(s)}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-default ${
-                          statusFilter === s
-                            ? 'bg-violet-600 text-white'
-                            : 'text-slate-500 hover:text-slate-300'
+                        key={f.value}
+                        onClick={() => handleFilterChange(f.value)}
+                        className={`px-3 py-1 rounded text-xs font-medium transition-all cursor-default ${
+                          activeFilter === f.value
+                            ? 'bg-violet-500/10 text-violet-300 ring-1 ring-inset ring-violet-500/40'
+                            : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
                         }`}
                       >
-                        {STATUS_PILL_LABELS[s]}
+                        {f.label}
                       </button>
                     ))}
                   </div>
@@ -328,28 +283,6 @@ export default function Dashboard() {
                       <option key={pr} value={pr}>{PRIORITY_LABELS[pr]}</option>
                     ))}
                   </select>
-
-                  {/* Dirty / Stale toggles */}
-                  <button
-                    onClick={() => setDirtyOnly((v) => !v)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-default ${
-                      dirtyOnly
-                        ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400'
-                        : 'bg-surface border-border text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    ● Dirty
-                  </button>
-                  <button
-                    onClick={() => setStaleOnly((v) => !v)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-default ${
-                      staleOnly
-                        ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
-                        : 'bg-surface border-border text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    ⚡ Stale
-                  </button>
 
                   {/* Sort + view — push right */}
                   <div className="flex items-center gap-1.5 ml-auto">
@@ -522,47 +455,6 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ── Metric cell ─────────────────────────────────────────────────────────────────
-
-function MetricCell({
-  label, value, icon: Icon, iconCls, dim, alertBg, sep, onClick,
-}: {
-  label: string;
-  value: number;
-  icon: LucideIcon;
-  iconCls: string;
-  dim?: boolean;
-  alertBg?: string;
-  sep?: boolean;
-  onClick?: () => void;
-}) {
-  const isAlert = alertBg !== undefined;
-  return (
-    <div
-      onClick={onClick}
-      className={[
-        'flex items-center gap-2.5 px-4 py-3 flex-1 min-w-[80px]',
-        sep ? 'border-l border-border' : '',
-        onClick ? 'cursor-pointer hover:bg-hover transition-colors' : '',
-        isAlert ? alertBg : '',
-      ].filter(Boolean).join(' ')}
-    >
-      <Icon size={14} className={dim ? 'text-slate-700' : iconCls} />
-      <div>
-        <div className={[
-          'text-lg font-bold leading-none tabular-nums',
-          dim ? 'text-slate-600' : isAlert ? 'text-slate-100' : 'text-slate-300',
-        ].join(' ')}>
-          {value}
-        </div>
-        <div className={`text-[10px] uppercase tracking-wide mt-0.5 ${dim ? 'text-slate-700' : 'text-slate-600'}`}>
-          {label}
-        </div>
       </div>
     </div>
   );

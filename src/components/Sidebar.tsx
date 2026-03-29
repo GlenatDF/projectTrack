@@ -19,7 +19,7 @@ export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {
             <FolderKanban size={13} className="text-violet-400" />
           </div>
           <span className="text-xs font-semibold text-slate-200 tracking-tight">
-            Project Track
+            Launchpad
           </span>
         </div>
       </div>

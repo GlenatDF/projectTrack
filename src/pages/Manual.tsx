@@ -156,7 +156,7 @@ export default function Manual() {
             </div>
             <div>
               <h1 className="text-sm font-semibold text-slate-100 tracking-tight">User Manual</h1>
-              <p className="text-xs text-slate-500 mt-0.5">Complete guide to Project Tracker</p>
+              <p className="text-xs text-slate-500 mt-0.5">Complete guide to Launchpad</p>
             </div>
           </div>
 
@@ -166,11 +166,11 @@ export default function Manual() {
               id="overview"
               icon={HelpCircle}
               title="Overview"
-              subtitle="What Project Tracker is and how to use it"
+              subtitle="What Launchpad is and how to use it"
             />
             <Card>
               <p className="text-xs text-slate-300 leading-relaxed mb-4">
-                <strong className="text-slate-100">Project Tracker</strong> is a local-only macOS desktop app
+                <strong className="text-slate-100">Launchpad</strong> is a local-only macOS desktop app
                 for tracking your AI-assisted vibe-coding projects. All data is stored in a SQLite database on
                 your Mac — no accounts, no cloud sync, no internet required.
               </p>
@@ -587,14 +587,14 @@ export default function Manual() {
             />
             <Card>
               <p className="text-xs text-slate-500 mb-3">
-                The Discover page lets you point Project Tracker at a root folder (e.g.{' '}
+                The Discover page lets you point Launchpad at a root folder (e.g.{' '}
                 <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">~/Projects</code>)
                 and find all git repositories beneath it.
               </p>
               <div className="space-y-0">
                 <FeatureRow icon={FolderSearch} label="Scan directory" desc="Enter a path and click Scan. Results list all .git folders found, one level deep by default." iconColor="text-slate-400" />
                 <FeatureRow icon={Plus} label="Add to tracker" desc="Select repos and click Import. New project entries are pre-filled with the path and name." iconColor="text-green-400" />
-                <FeatureRow icon={CheckCircle2} label="Already tracked" desc="Repos that are already in Project Tracker are shown as tracked and can't be added twice." iconColor="text-slate-500" />
+                <FeatureRow icon={CheckCircle2} label="Already tracked" desc="Repos that are already in Launchpad are shown as tracked and can't be added twice." iconColor="text-slate-500" />
               </div>
             </Card>
           </section>
@@ -650,7 +650,7 @@ export default function Manual() {
               </p>
               <SubHeading>Storage location</SubHeading>
               <p className="text-xs text-slate-600 font-mono bg-surface border border-border rounded px-3 py-2">
-                ~/Library/Application Support/com.glen.projecttracker/projects.db
+                ~/Library/Application Support/com.glen.launchpad/projects.db
               </p>
             </Card>
           </section>
@@ -665,7 +665,7 @@ export default function Manual() {
             />
             <Card className="mb-3">
               <p className="text-xs text-slate-500 mb-3">
-                Project Tracker enforces a clear distinction between three types of verification.
+                Launchpad enforces a clear distinction between three types of verification.
                 This standard is built into the <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono text-[11px]">CLAUDE.md</code> of
                 every new project and into the <strong className="text-slate-300">testing-discipline</strong> skill.
                 The core rule is simple: <strong className="text-slate-300">build passing is not the same as tested.</strong>

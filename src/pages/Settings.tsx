@@ -45,7 +45,7 @@ export default function Settings() {
       setMsg(null);
       const json = await exportProjects();
       const date = new Date().toISOString().slice(0, 10);
-      downloadJson(json, `project-tracker-export-${date}.json`);
+      downloadJson(json, `launchpad-export-${date}.json`);
       setMsg({ type: 'ok', text: 'Export downloaded.' });
     } catch (e) {
       setMsg({ type: 'err', text: String(e) });
@@ -217,9 +217,9 @@ export default function Settings() {
           <div className="bg-card border border-border rounded-lg p-4 space-y-3">
             <SectionLabel>About</SectionLabel>
             <div className="space-y-0">
-              <Row label="App" value="Project Track" />
+              <Row label="App" value="Launchpad" />
               <Row label="Version" value="0.1.0" />
-              <Row label="Storage" value="~/Library/Application Support/com.glen.projecttracker/" />
+              <Row label="Storage" value="~/Library/Application Support/com.glen.launchpad/" />
               <Row label="Backend" value="Rust + SQLite (local-only)" />
             </div>
           </div>

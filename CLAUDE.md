@@ -1,4 +1,4 @@
-# CLAUDE.md — Project Track
+# CLAUDE.md — Launchpad
 
 This file gives Claude Code context for this project.
 Read it at the start of every session **before writing any code**.
@@ -7,17 +7,17 @@ Read it at the start of every session **before writing any code**.
 
 ## Overview
 
-Project Track is a macOS desktop app (Tauri v2 + React + TypeScript + SQLite) for managing
-AI vibe-coding projects. It helps developers track project status, run planning workflows,
-and start new Claude-ready projects with scaffolded docs and skills.
+Launchpad is a macOS desktop app (Tauri v2 + React + TypeScript + SQLite) for scaffolding
+and managing AI vibe-coding projects. It helps developers start new Claude-ready projects
+with scaffolded docs and skills, track project status, and run planning workflows.
 
 **Stack:**
-- Tauri v2 (identifier: `com.glen.projecttracker`)
+- Tauri v2 (identifier: `com.glen.launchpad`)
 - Rust backend: rusqlite (bundled), serde, serde_json, ureq
 - Frontend: React 19, react-router-dom v6, Tailwind CSS v3, lucide-react, Vite
 - No tauri-plugin-sql, no tauri-plugin-shell — all DB and process ops are in Rust
 
-**DB location (runtime):** `~/Library/Application Support/com.glen.projecttracker/projects.db`
+**DB location (runtime):** `~/Library/Application Support/com.glen.launchpad/projects.db`
 
 ---
 
@@ -143,7 +143,7 @@ Before writing any migration in `db.rs`:
 
 1. Add columns as nullable or with a DEFAULT — never add NOT NULL without a DEFAULT in the same commit
 2. Never drop or rename a column in the same commit that removes the code referencing it — decouple the two changes
-3. Test the migration against the live DB at `~/Library/Application Support/com.glen.projecttracker/projects.db`, not just a clean install
+3. Test the migration against the live DB at `~/Library/Application Support/com.glen.launchpad/projects.db`, not just a clean install
 4. If backfilling existing rows, do it in the same migration function before any code assumes the new shape
 
 ---
