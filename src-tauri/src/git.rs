@@ -54,6 +54,49 @@ pub fn is_valid_repo(path: &str) -> bool {
     run_git(path, &["rev-parse", "--git-dir"]).is_ok()
 }
 
+/// Lightweight scan for repo discovery: 2 subprocess calls instead of 5.
+/// Assumes the path is already known to be a valid git repo (.git exists).
+/// Populates: is_valid_repo, current_branch, is_dirty, last_commit_date,
+/// last_commit_message. All other fields are left at their defaults.
+pub fn scan_repo_light(repo_path: &str) -> GitStatus {
+    let mut status = GitStatus {
+        is_valid_repo: true,
+        ..Default::default()
+    };
+
+    // `--branch` adds a `## <branch>...` header line as the first line.
+    // This gives us branch + dirty check in a single subprocess.
+    if let Ok(porcelain) = run_git(repo_path, &["status", "--porcelain", "--branch"]) {
+        let mut lines = porcelain.lines();
+        if let Some(header) = lines.next() {
+            // Header format: "## main...origin/main [ahead N]" or "## HEAD (no branch)"
+            let branch_part = header.trim_start_matches("## ");
+            let branch = branch_part
+                .split("...")
+                .next()
+                .unwrap_or(branch_part)
+                .trim();
+            if !branch.is_empty() && branch != "HEAD (no branch)" {
+                status.current_branch = Some(branch.to_string());
+            }
+        }
+        status.is_dirty = lines.next().is_some();
+    }
+
+    // One subprocess for last commit date + message.
+    if let Ok(log) = run_git(repo_path, &["log", "-1", "--format=%ai|%s"]) {
+        if !log.is_empty() {
+            let parts: Vec<&str> = log.splitn(2, '|').collect();
+            if parts.len() == 2 {
+                status.last_commit_date = Some(parts[0].to_string());
+                status.last_commit_message = Some(parts[1].to_string());
+            }
+        }
+    }
+
+    status
+}
+
 /// Scan a git repository and return its current status snapshot.
 pub fn scan_repo(repo_path: &str) -> GitStatus {
     if repo_path.is_empty() {

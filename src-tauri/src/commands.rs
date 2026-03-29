@@ -290,7 +290,7 @@ pub fn discover_repos(
                 .to_string();
             let path_str = p.to_string_lossy().to_string();
             let already_tracked = existing.contains(&path_str);
-            let gs = git::scan_repo(&path_str);
+            let gs = git::scan_repo_light(&path_str);
             db::DiscoveredRepo {
                 name,
                 path: path_str,
