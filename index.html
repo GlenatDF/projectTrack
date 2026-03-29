@@ -152,14 +152,14 @@
 
     h1 {
       font-size: clamp(2.4rem, 4.6vw, 4.4rem);
-      max-width: 12ch;
+      max-width: 15ch;
     }
 
     h2 {
       font-size: clamp(1.8rem, 3vw, 2.4rem);
     }
 
-    h3 { font-size: 1.1rem; }
+    h3 { font-size: 1.12rem; }
 
     p {
       margin: 0 0 16px;
@@ -169,8 +169,9 @@
 
     .lead {
       font-size: 1.18rem;
-      max-width: 64ch;
+      max-width: 58ch;
       color: #42506a;
+      line-height: 1.7;
     }
 
     .hero-actions {
@@ -251,7 +252,10 @@
       box-shadow: var(--shadow);
     }
 
-    .stat { padding: 18px; }
+    .stat {
+      padding: 18px 18px 18px 15px;
+      border-left: 3px solid var(--accent);
+    }
 
     .stat strong {
       display: block;
@@ -265,11 +269,14 @@
       font-size: 0.95rem;
     }
 
-    section { padding: 34px 0; }
+    section { padding: 56px 0; }
 
     .section-header {
-      margin-bottom: 22px;
-      max-width: 72ch;
+      margin-bottom: 32px;
+    }
+
+    .section-header > p {
+      max-width: 58ch;
     }
 
     .grid {
@@ -348,6 +355,52 @@
       font-weight: 900;
     }
 
+    /* File and skill card heading treatments */
+    .file-card h3 {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #4b2cb6;
+      background: #f1ebff;
+      border: 1px solid #ddd1ff;
+      padding: 5px 10px;
+      border-radius: 7px;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      display: inline-block;
+      max-width: 100%;
+      margin-bottom: 16px;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    .skill-card h3 {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.93rem;
+      letter-spacing: 0;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      margin-bottom: 12px;
+    }
+
+    /* Card hover states */
+    .card,
+    .feature,
+    .file-card,
+    .skill-card,
+    .step,
+    .audit-card {
+      transition: box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .card:hover,
+    .feature:hover,
+    .file-card:hover,
+    .skill-card:hover {
+      box-shadow: 0 20px 52px rgba(36, 48, 66, 0.13);
+      transform: translateY(-2px);
+    }
+
     .code-block {
       background: #221c35;
       color: #f3efff;
@@ -358,6 +411,10 @@
       box-shadow: var(--shadow);
       font-size: 0.95rem;
       line-height: 1.7;
+    }
+
+    .code-block pre {
+      margin: 0;
     }
 
     .code-block code {
@@ -386,13 +443,17 @@
     }
 
     .cta-panel {
-      grid-template-columns: 1.2fr 0.8fr;
+      grid-template-columns: 1.25fr 0.75fr;
       align-items: stretch;
     }
 
-    .cta-main,
+    .cta-main {
+      padding: 32px;
+    }
+
     .cta-side {
-      padding: 26px;
+      padding: 28px;
+      background: var(--surface-strong);
     }
 
     .kicker {
@@ -425,14 +486,19 @@
     }
 
     .footer {
-      padding: 48px 0 70px;
+      padding: 56px 0 80px;
     }
 
     .footer-card {
-      padding: 28px;
+      padding: 36px;
       background: var(--surface-strong);
       border: 1px solid var(--border);
       border-radius: 24px;
+    }
+
+    .footer-card h2 {
+      font-size: clamp(1.4rem, 2.2vw, 1.8rem);
+      margin-bottom: 14px;
     }
 
     @media (max-width: 920px) {
