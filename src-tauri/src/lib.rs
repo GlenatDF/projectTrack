@@ -125,6 +125,13 @@ pub fn run() {
             // Project init
             commands::init_new_project,
             commands::scaffold_full_project,
+            // Audits
+            commands::assemble_audit_prompt,
+            commands::run_audit_with_claude_cli,
+            commands::store_audit_result,
+            commands::get_project_audits,
+            commands::get_audit_detail,
+            commands::update_finding_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

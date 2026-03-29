@@ -271,6 +271,41 @@ CREATE TABLE IF NOT EXISTS ai_plan_runs (
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_plan_runs_pid ON ai_plan_runs(project_id);
+
+CREATE TABLE IF NOT EXISTS project_audits (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    audit_kind       TEXT    NOT NULL DEFAULT 'full_codebase',
+    score            REAL,
+    score_label      TEXT    NOT NULL DEFAULT '',
+    summary          TEXT    NOT NULL DEFAULT '',
+    strengths        TEXT    NOT NULL DEFAULT '[]',
+    recommendations  TEXT    NOT NULL DEFAULT '[]',
+    files_reviewed   TEXT    NOT NULL DEFAULT '[]',
+    raw_output       TEXT    NOT NULL DEFAULT '',
+    raw_json         TEXT,
+    created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_project_audits_pid ON project_audits(project_id);
+
+CREATE TABLE IF NOT EXISTS audit_findings (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_id       INTEGER NOT NULL REFERENCES project_audits(id) ON DELETE CASCADE,
+    project_id     INTEGER NOT NULL,
+    severity       TEXT    NOT NULL DEFAULT 'medium',
+    category       TEXT    NOT NULL DEFAULT 'other',
+    title          TEXT    NOT NULL,
+    description    TEXT    NOT NULL DEFAULT '',
+    file_ref       TEXT    NOT NULL DEFAULT '',
+    impact         TEXT    NOT NULL DEFAULT '',
+    fix_size       TEXT,
+    classification TEXT    NOT NULL DEFAULT 'likely',
+    status         TEXT    NOT NULL DEFAULT 'open',
+    task_id        INTEGER REFERENCES project_tasks(id) ON DELETE SET NULL,
+    created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_aid ON audit_findings(audit_id);
+CREATE INDEX IF NOT EXISTS idx_audit_findings_pid ON audit_findings(project_id);
 ";
 
 // ── Initialisation ────────────────────────────────────────────────────────────
@@ -744,6 +779,82 @@ pub struct ImportPlanResult {
     pub preserved_task_count: i64,
     /// Fields that were missing in the AI response and were filled with fallback values.
     pub warnings: Vec<String>,
+}
+
+// ── Audit structs ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AuditRecord {
+    pub id: i64,
+    pub project_id: i64,
+    pub audit_kind: String,
+    pub score: Option<f64>,
+    pub score_label: String,
+    pub summary: String,
+    pub strengths: String,        // JSON array text
+    pub recommendations: String,  // JSON array text
+    pub files_reviewed: String,   // JSON array text
+    pub raw_output: String,
+    pub raw_json: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AuditFinding {
+    pub id: i64,
+    pub audit_id: i64,
+    pub project_id: i64,
+    pub severity: String,
+    pub category: String,
+    pub title: String,
+    pub description: String,
+    pub file_ref: String,
+    pub impact: String,
+    pub fix_size: Option<String>,
+    pub classification: String,
+    pub status: String,
+    pub task_id: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AuditWithFindings {
+    pub audit: AuditRecord,
+    pub findings: Vec<AuditFinding>,
+}
+
+/// Result returned to the frontend after a successful audit store.
+#[derive(Debug, Serialize)]
+pub struct AuditStoredResult {
+    pub audit_id: i64,
+    pub findings_count: usize,
+}
+
+/// Structured input for a single finding; used by `store_audit`.
+pub struct FindingInput {
+    pub severity: String,
+    pub category: String,
+    pub title: String,
+    pub description: String,
+    pub file_ref: String,
+    pub impact: String,
+    pub fix_size: Option<String>,
+    pub classification: String,
+}
+
+/// Structured input for storing a fully-parsed audit result; used by `store_audit`.
+pub struct StoreAuditInput {
+    pub project_id: i64,
+    pub audit_kind: String,
+    pub score: Option<f64>,
+    pub score_label: String,
+    pub summary: String,
+    pub strengths: Vec<String>,
+    pub recommendations: Vec<String>,
+    pub files_reviewed: Vec<String>,
+    pub raw_output: String,
+    pub raw_json: Option<String>,
+    pub findings: Vec<FindingInput>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -2002,4 +2113,484 @@ fn build_opener_text(project: &Project, ai_instructions: Option<&str>, tasks: &[
     );
 
     parts.join("\n\n")
+}
+
+// ── Audits: validation helpers ────────────────────────────────────────────────
+
+fn validate_audit_kind(s: &str) -> std::result::Result<(), String> {
+    match s {
+        "full_codebase" | "security" | "performance" | "reliability" => Ok(()),
+        _ => Err(format!(
+            "Invalid audit_kind \"{s}\": must be full_codebase, security, performance, or reliability"
+        )),
+    }
+}
+
+fn validate_severity(s: &str) -> std::result::Result<(), String> {
+    match s {
+        "critical" | "high" | "medium" | "low" => Ok(()),
+        _ => Err(format!(
+            "Invalid severity \"{s}\": must be critical, high, medium, or low"
+        )),
+    }
+}
+
+fn validate_classification(s: &str) -> std::result::Result<(), String> {
+    match s {
+        "confirmed" | "likely" | "needs_verification" => Ok(()),
+        _ => Err(format!(
+            "Invalid classification \"{s}\": must be confirmed, likely, or needs_verification"
+        )),
+    }
+}
+
+fn validate_fix_size(s: &str) -> std::result::Result<(), String> {
+    match s {
+        "small" | "medium" | "large" => Ok(()),
+        _ => Err(format!(
+            "Invalid fix_size \"{s}\": must be small, medium, or large"
+        )),
+    }
+}
+
+fn validate_finding_status(s: &str) -> std::result::Result<(), String> {
+    match s {
+        "open" | "resolved" | "wont_fix" | "task_created" => Ok(()),
+        _ => Err(format!(
+            "Invalid finding status \"{s}\": must be open, resolved, wont_fix, or task_created"
+        )),
+    }
+}
+
+// ── Audits: DB functions ───────────────────────────────────────────────────────
+
+fn row_to_audit_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditRecord> {
+    Ok(AuditRecord {
+        id:              row.get(0)?,
+        project_id:      row.get(1)?,
+        audit_kind:      row.get(2)?,
+        score:           row.get(3)?,
+        score_label:     row.get(4)?,
+        summary:         row.get(5)?,
+        strengths:       row.get(6)?,
+        recommendations: row.get(7)?,
+        files_reviewed:  row.get(8)?,
+        raw_output:      row.get(9)?,
+        raw_json:        row.get(10)?,
+        created_at:      row.get(11)?,
+    })
+}
+
+fn row_to_audit_finding(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditFinding> {
+    Ok(AuditFinding {
+        id:             row.get(0)?,
+        audit_id:       row.get(1)?,
+        project_id:     row.get(2)?,
+        severity:       row.get(3)?,
+        category:       row.get(4)?,
+        title:          row.get(5)?,
+        description:    row.get(6)?,
+        file_ref:       row.get(7)?,
+        impact:         row.get(8)?,
+        fix_size:       row.get(9)?,
+        classification: row.get(10)?,
+        status:         row.get(11)?,
+        task_id:        row.get(12)?,
+        created_at:     row.get(13)?,
+    })
+}
+
+const AUDIT_SELECT: &str =
+    "SELECT id, project_id, audit_kind, score, score_label, summary,
+            strengths, recommendations, files_reviewed, raw_output, raw_json, created_at
+     FROM project_audits";
+
+const FINDING_SELECT: &str =
+    "SELECT id, audit_id, project_id, severity, category, title,
+            description, file_ref, impact, fix_size, classification, status, task_id, created_at
+     FROM audit_findings";
+
+/// Return all audit records for a project, newest first. Findings are not included.
+pub fn fetch_project_audits(conn: &Connection, project_id: i64) -> Result<Vec<AuditRecord>> {
+    let mut stmt = conn.prepare(&format!(
+        "{AUDIT_SELECT} WHERE project_id = ?1 ORDER BY created_at DESC"
+    ))?;
+    let rows = stmt.query_map(params![project_id], row_to_audit_record)?;
+    rows.collect()
+}
+
+/// Return a single audit record plus all its findings, ordered by severity then insertion order.
+pub fn fetch_audit_with_findings(
+    conn: &Connection,
+    audit_id: i64,
+) -> Result<Option<AuditWithFindings>> {
+    let audit = match conn.query_row(
+        &format!("{AUDIT_SELECT} WHERE id = ?1"),
+        params![audit_id],
+        row_to_audit_record,
+    ) {
+        Ok(a) => a,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+
+    let mut stmt = conn.prepare(&format!(
+        "{FINDING_SELECT}
+         WHERE audit_id = ?1
+         ORDER BY
+             CASE severity
+                 WHEN 'critical' THEN 1
+                 WHEN 'high'     THEN 2
+                 WHEN 'medium'   THEN 3
+                 WHEN 'low'      THEN 4
+                 ELSE 5
+             END,
+             id"
+    ))?;
+    let findings: Result<Vec<AuditFinding>> =
+        stmt.query_map(params![audit_id], row_to_audit_finding)?.collect();
+
+    Ok(Some(AuditWithFindings { audit, findings: findings? }))
+}
+
+/// Update the status of a single finding. Validates the status value before writing.
+pub fn update_finding_status(
+    conn: &Connection,
+    finding_id: i64,
+    status: &str,
+) -> std::result::Result<(), String> {
+    validate_finding_status(status)?;
+    conn.execute(
+        "UPDATE audit_findings SET status = ?1 WHERE id = ?2",
+        params![status, finding_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Store a fully-parsed audit result in a single transaction.
+/// Validates enum fields before writing; rolls back on any failure.
+/// Returns the new audit's `id`.
+pub fn store_audit(
+    conn: &mut Connection,
+    input: StoreAuditInput,
+) -> std::result::Result<i64, String> {
+    validate_audit_kind(&input.audit_kind)?;
+    for f in &input.findings {
+        validate_severity(&f.severity)?;
+        validate_classification(&f.classification)?;
+        if let Some(fs) = &f.fix_size {
+            validate_fix_size(fs)?;
+        }
+    }
+
+    let strengths_json = serde_json::to_string(&input.strengths)
+        .unwrap_or_else(|_| "[]".to_string());
+    let recommendations_json = serde_json::to_string(&input.recommendations)
+        .unwrap_or_else(|_| "[]".to_string());
+    let files_reviewed_json = serde_json::to_string(&input.files_reviewed)
+        .unwrap_or_else(|_| "[]".to_string());
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO project_audits
+             (project_id, audit_kind, score, score_label, summary, strengths,
+              recommendations, files_reviewed, raw_output, raw_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            input.project_id,
+            input.audit_kind,
+            input.score,
+            input.score_label,
+            input.summary,
+            strengths_json,
+            recommendations_json,
+            files_reviewed_json,
+            input.raw_output,
+            input.raw_json,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    let audit_id = tx.last_insert_rowid();
+
+    for f in &input.findings {
+        tx.execute(
+            "INSERT INTO audit_findings
+                 (audit_id, project_id, severity, category, title, description,
+                  file_ref, impact, fix_size, classification, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'open')",
+            params![
+                audit_id,
+                input.project_id,
+                f.severity,
+                f.category,
+                f.title,
+                f.description,
+                f.file_ref,
+                f.impact,
+                f.fix_size,
+                f.classification,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(audit_id)
+}
+
+// ── Audits: prompt assembly ────────────────────────────────────────────────────
+
+/// Assemble a codebase audit prompt for the given project and audit kind.
+/// Returns the prompt text ready to send to Claude.
+pub fn assemble_audit_prompt(
+    conn: &Connection,
+    project_id: i64,
+    audit_kind: &str,
+) -> Result<AssembledPrompt> {
+    let project = fetch_project(conn, project_id)?;
+
+    // Load the project brief for context, if substantive
+    let brief: Option<String> = conn
+        .query_row(
+            "SELECT content FROM project_documents
+             WHERE project_id = ?1 AND doc_type = 'brief'",
+            params![project_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|s| s.trim().len() > 80);
+
+    let prompt = build_audit_prompt(&project, audit_kind, brief.as_deref());
+    Ok(AssembledPrompt { prompt, warnings: vec![] })
+}
+
+fn build_audit_prompt(project: &Project, audit_kind: &str, brief: Option<&str>) -> String {
+    let focus = match audit_kind {
+        "security" =>
+            "Focus specifically on **security** findings: command/shell injection, SQL injection, \
+             path traversal, credential exposure, input validation gaps. \
+             Still report other critical or high severity findings.",
+        "performance" =>
+            "Focus specifically on **performance** findings: N+1 query patterns, blocking main-thread I/O, \
+             unnecessary re-fetches or re-renders. \
+             Still report other critical or high severity findings.",
+        "reliability" =>
+            "Focus specifically on **reliability** findings: `unwrap()`/`expect()` on paths that can \
+             realistically fail, `.catch(() => {})` swallowing errors, mutex/lock patterns, race conditions, \
+             silent failures. \
+             Still report other critical or high severity findings.",
+        _ =>
+            "Review all categories: correctness, security, reliability, performance, \
+             type safety, dead code, and data integrity.",
+    };
+
+    let mut parts: Vec<String> = Vec::new();
+
+    parts.push("You are performing a structured code quality audit.".to_string());
+
+    // Project context
+    let mut ctx = format!("## Project: {}", project.name);
+    if !project.description.is_empty() {
+        ctx.push_str(&format!("\n\n{}", project.description));
+    }
+    if !project.local_repo_path.is_empty() {
+        ctx.push_str(&format!(
+            "\n\n**Repo path:** `{}`\n\nRead the key source files in this repo before writing your response.",
+            project.local_repo_path
+        ));
+    }
+    parts.push(ctx);
+
+    if let Some(b) = brief {
+        parts.push(format!("## Project Brief\n\n{}", b));
+    }
+
+    parts.push(format!("## Audit scope\n\n{}", focus));
+
+    parts.push(
+        "## What to examine in each file\n\n\
+         - **Correctness**: logic errors, wrong assumptions, unhandled edge cases, silent failures\n\
+         - **Security**: command injection (shell/AppleScript/subprocess), SQL injection, path traversal, \
+           exposed secrets or credentials\n\
+         - **Reliability**: `unwrap()`/`expect()`/`.catch(() => {})` on paths that can realistically fail, \
+           mutex or lock patterns that could leave the app unusable after a panic, race conditions\n\
+         - **Performance**: N+1 query patterns, blocking the main thread during slow I/O, \
+           unnecessary re-renders or re-fetches\n\
+         - **Type safety**: unsafe casts, missing null checks on values that can be null, \
+           unhandled promise rejections\n\
+         - **Dead code**: unused exports, stale fields, unreachable branches\n\
+         - **Data integrity**: missing transactions for multi-write operations, \
+           validation present on one path but missing on an equivalent path"
+            .to_string(),
+    );
+
+    parts.push(
+        "## Rating scale (score out of 10)\n\n\
+         - **9–10**: Production-ready; only minor polish items\n\
+         - **8**: Solid; one or two medium issues worth fixing soon\n\
+         - **7**: Works reliably for the happy path; notable gaps to address\n\
+         - **6**: Functional but fragile; several correctness or reliability issues\n\
+         - **5 or below**: Significant problems that affect day-to-day use"
+            .to_string(),
+    );
+
+    parts.push(
+        "## Labelling each finding\n\n\
+         - **confirmed** — verified directly in the code\n\
+         - **likely** — strong evidence but impact depends on runtime conditions\n\
+         - **needs_verification** — plausible but cannot be confirmed without running the app"
+            .to_string(),
+    );
+
+    parts.push(
+        "## Rules for a good audit\n\n\
+         - Read every key file — surprises live in the quiet corners\n\
+         - Be specific: file path, approximate line, exact issue, real impact\n\
+         - Do not inflate severity — accurate beats alarming\n\
+         - Strengths are not optional — note what is genuinely working well\n\
+         - Work through all categories before settling on a score"
+            .to_string(),
+    );
+
+    parts.push(format!(
+        "## Required output format\n\n\
+         Respond with **only** a JSON object wrapped in a ```json fence — no preamble, no trailing text.\n\
+         \n\
+         ```json\n\
+         {{\n\
+           \"score\": 7.5,\n\
+           \"score_label\": \"7.5/10 — Works reliably but has notable gaps\",\n\
+           \"summary\": \"2–3 sentence overall assessment.\",\n\
+           \"strengths\": [\"Specific strength 1\", \"Specific strength 2\"],\n\
+           \"recommendations\": [\"Most important fix\", \"Next most important fix\"],\n\
+           \"files_reviewed\": [\"src/commands.rs\", \"src/db.rs\"],\n\
+           \"findings\": [\n\
+             {{\n\
+               \"severity\": \"high\",\n\
+               \"category\": \"security\",\n\
+               \"title\": \"Shell escaping applied in wrong order\",\n\
+               \"description\": \"The helper applies POSIX single-quote escaping before the \
+                                  AppleScript backslash escape, so introduced backslashes are doubled.\",\n\
+               \"file_ref\": \"src-tauri/src/commands.rs:360\",\n\
+               \"impact\": \"A path with a single-quote could break out of the AppleScript string.\",\n\
+               \"fix_size\": \"small\",\n\
+               \"classification\": \"confirmed\"\n\
+             }}\n\
+           ]\n\
+         }}\n\
+         ```\n\
+         \n\
+         Field constraints:\n\
+         - **score**: number 0–10 (one decimal), or omit if you cannot assess\n\
+         - **severity**: `\"critical\"` | `\"high\"` | `\"medium\"` | `\"low\"`\n\
+         - **classification**: `\"confirmed\"` | `\"likely\"` | `\"needs_verification\"`\n\
+         - **fix_size**: `\"small\"` | `\"medium\"` | `\"large\"` (omit if uncertain)\n\
+         - **file_ref**: relative path and approximate line, e.g. `\"src/foo.rs:42\"`\n\
+         - **findings** may be an empty array if the codebase is clean"
+    ));
+
+    parts.join("\n\n")
+}
+
+// ── Audits: parse + store ─────────────────────────────────────────────────────
+
+fn normalise_severity(s: &str) -> String {
+    match s.to_lowercase().trim() {
+        "critical" | "crit" => "critical".to_string(),
+        "high" | "h"        => "high".to_string(),
+        "low"  | "l"        => "low".to_string(),
+        _                   => "medium".to_string(),
+    }
+}
+
+fn normalise_classification(s: &str) -> String {
+    let lower = s.to_lowercase();
+    match lower.trim() {
+        "confirmed"           => "confirmed".to_string(),
+        "needs_verification"
+        | "needs verification"
+        | "unverified"        => "needs_verification".to_string(),
+        _                     => "likely".to_string(),
+    }
+}
+
+/// Parse Claude's raw audit response, store it in the DB, and return a summary.
+/// `raw_output` is the complete unmodified Claude response; JSON is extracted
+/// from it automatically (handles ```json fences or bare JSON).
+pub fn parse_and_store_audit(
+    conn: &mut Connection,
+    project_id: i64,
+    audit_kind: &str,
+    raw_output: &str,
+) -> std::result::Result<AuditStoredResult, String> {
+    let stripped = strip_code_fences(raw_output);
+    let json_val: Value = serde_json::from_str(&stripped)
+        .map_err(|e| format!("JSON parse failed: {e}"))?;
+
+    let score: Option<f64> = match json_val.get("score") {
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) => s.parse().ok(),
+        _ => None,
+    };
+    let score_label     = val_str(&json_val, "score_label").unwrap_or_default();
+    let summary         = val_str(&json_val, "summary").unwrap_or_default();
+
+    let to_strings = |arr: Vec<Value>| -> Vec<String> {
+        arr.into_iter()
+            .filter_map(|v| if let Value::String(s) = v { Some(s) } else { None })
+            .collect()
+    };
+
+    let strengths       = to_strings(val_arr(&json_val, "strengths"));
+    let recommendations = to_strings(val_arr(&json_val, "recommendations"));
+    let files_reviewed  = to_strings(val_arr(&json_val, "files_reviewed"));
+
+    let findings_arr = val_arr(&json_val, "findings");
+    let mut findings: Vec<FindingInput> = Vec::new();
+    for f in &findings_arr {
+        let severity = val_str(f, "severity")
+            .map(|s| normalise_severity(&s))
+            .unwrap_or_else(|| "medium".to_string());
+        let classification = val_str(f, "classification")
+            .map(|s| normalise_classification(&s))
+            .unwrap_or_else(|| "likely".to_string());
+        let fix_size = val_str(f, "fix_size").and_then(|s| {
+            match s.to_lowercase().trim() {
+                "small"  => Some("small".to_string()),
+                "medium" => Some("medium".to_string()),
+                "large"  => Some("large".to_string()),
+                _        => None,
+            }
+        });
+        findings.push(FindingInput {
+            severity,
+            category:       val_str(f, "category").unwrap_or_else(|| "other".to_string()),
+            title:          val_str(f, "title").unwrap_or_else(|| "Untitled finding".to_string()),
+            description:    val_str(f, "description").unwrap_or_default(),
+            file_ref:       val_str(f, "file_ref").unwrap_or_default(),
+            impact:         val_str(f, "impact").unwrap_or_default(),
+            fix_size,
+            classification,
+        });
+    }
+
+    let findings_count = findings.len();
+    let input = StoreAuditInput {
+        project_id,
+        audit_kind: audit_kind.to_string(),
+        score,
+        score_label,
+        summary,
+        strengths,
+        recommendations,
+        files_reviewed,
+        raw_output: raw_output.to_string(),
+        raw_json:   Some(stripped),
+        findings,
+    };
+
+    let audit_id = store_audit(conn, input)?;
+    Ok(AuditStoredResult { audit_id, findings_count })
 }

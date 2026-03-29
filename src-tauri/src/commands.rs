@@ -1371,3 +1371,119 @@ pub fn scaffold_full_project(
         scaffold_steps,
     })
 }
+
+// ── Audits ─────────────────────────────────────────────────────────────────────
+
+/// Assemble a codebase audit prompt for the project and return it (+ any warnings).
+/// The audit_kind controls the focus: "full_codebase" | "security" | "performance" | "reliability".
+#[tauri::command]
+pub fn assemble_audit_prompt(
+    project_id: i64,
+    audit_kind: String,
+    state: State<'_, AppState>,
+) -> Result<db::AssembledPrompt, String> {
+    let conn = db_conn!(state);
+    db::assemble_audit_prompt(&conn, project_id, &audit_kind).map_err(|e| e.to_string())
+}
+
+/// Assemble the audit prompt and pipe it to `claude --print`, returning the raw response.
+/// The DB lock is held only briefly (prompt assembly), then released before the slow CLI call.
+#[tauri::command]
+pub fn run_audit_with_claude_cli(
+    project_id: i64,
+    audit_kind: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    // Assemble under a short-lived lock
+    let prompt = {
+        let conn = db_conn!(state);
+        db::assemble_audit_prompt(&conn, project_id, &audit_kind)
+            .map_err(|e| e.to_string())?
+            .prompt
+    };
+
+    let path = augmented_path();
+    let candidates = [
+        "claude",
+        "/usr/local/bin/claude",
+        "/opt/homebrew/bin/claude",
+        "/usr/bin/claude",
+    ];
+
+    let mut last_err = String::new();
+    for candidate in &candidates {
+        match Command::new(candidate)
+            .arg("--print")
+            .env("PATH", &path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin
+                        .write_all(prompt.as_bytes())
+                        .map_err(|e| e.to_string())?;
+                }
+                let out = child.wait_with_output().map_err(|e| e.to_string())?;
+                if out.status.success() {
+                    return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+                }
+                return Err(format!(
+                    "Claude CLI exited with an error:\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                ));
+            }
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+
+    Err(format!(
+        "Claude CLI not found. Install it with:\n  npm install -g @anthropic-ai/claude-code\n\n({last_err})"
+    ))
+}
+
+/// Parse a raw Claude audit response and store it in the database.
+/// Returns the new audit's id and the count of findings stored.
+#[tauri::command]
+pub fn store_audit_result(
+    project_id: i64,
+    audit_kind: String,
+    raw_output: String,
+    state: State<'_, AppState>,
+) -> Result<db::AuditStoredResult, String> {
+    let mut conn = db_conn!(state);
+    db::parse_and_store_audit(&mut conn, project_id, &audit_kind, &raw_output)
+}
+
+/// Return all audit records for a project, newest first. Findings are not included.
+#[tauri::command]
+pub fn get_project_audits(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<db::AuditRecord>, String> {
+    let conn = db_conn!(state);
+    db::fetch_project_audits(&conn, project_id).map_err(|e| e.to_string())
+}
+
+/// Return a single audit record and all its findings.
+#[tauri::command]
+pub fn get_audit_detail(
+    audit_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<db::AuditWithFindings>, String> {
+    let conn = db_conn!(state);
+    db::fetch_audit_with_findings(&conn, audit_id).map_err(|e| e.to_string())
+}
+
+/// Update the resolution status of a single finding.
+#[tauri::command]
+pub fn update_finding_status(
+    finding_id: i64,
+    status: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = db_conn!(state);
+    db::update_finding_status(&conn, finding_id, &status)
+}

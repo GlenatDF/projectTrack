@@ -374,3 +374,56 @@ export const RISK_LEVEL_COLORS: Record<RiskLevel, string> = {
   medium: 'bg-yellow-500/20 text-yellow-300',
   high:   'bg-red-500/20 text-red-300',
 };
+
+// ── Audits ────────────────────────────────────────────────────────────────────
+
+export type AuditKind = 'full_codebase' | 'security' | 'performance' | 'reliability';
+export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type FindingClassification = 'confirmed' | 'likely' | 'needs_verification';
+export type FindingStatus = 'open' | 'resolved' | 'wont_fix' | 'task_created';
+export type FixSize = 'small' | 'medium' | 'large';
+
+export interface AuditRecord {
+  id: number;
+  project_id: number;
+  audit_kind: AuditKind;
+  score: number | null;
+  score_label: string;
+  summary: string;
+  /** JSON-encoded string array */
+  strengths: string;
+  /** JSON-encoded string array */
+  recommendations: string;
+  /** JSON-encoded string array */
+  files_reviewed: string;
+  raw_output: string;
+  raw_json: string | null;
+  created_at: string;
+}
+
+export interface AuditFinding {
+  id: number;
+  audit_id: number;
+  project_id: number;
+  severity: FindingSeverity;
+  category: string;
+  title: string;
+  description: string;
+  file_ref: string;
+  impact: string;
+  fix_size: FixSize | null;
+  classification: FindingClassification;
+  status: FindingStatus;
+  task_id: number | null;
+  created_at: string;
+}
+
+export interface AuditWithFindings {
+  audit: AuditRecord;
+  findings: AuditFinding[];
+}
+
+export interface AuditStoredResult {
+  audit_id: number;
+  findings_count: number;
+}

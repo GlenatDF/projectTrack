@@ -3,6 +3,9 @@ import type {
   AiPlanRun,
   AppSettings,
   AssembledPrompt,
+  AuditRecord,
+  AuditStoredResult,
+  AuditWithFindings,
   DashboardStats,
   DiscoveredRepo,
   FullScaffoldResult,
@@ -254,3 +257,30 @@ export const scaffoldFullProject = (params: {
   createClaudeSkills: boolean;
 }): Promise<FullScaffoldResult> =>
   invoke('scaffold_full_project', params);
+
+// ── Audits ────────────────────────────────────────────────────────────────────
+
+export const assembleAuditPrompt = (projectId: number, auditKind: string): Promise<AssembledPrompt> =>
+  invoke('assemble_audit_prompt', { projectId, auditKind });
+
+export const runAuditWithClaudeCli = (projectId: number, auditKind: string): Promise<string> =>
+  invoke('run_audit_with_claude_cli', { projectId, auditKind });
+
+export const storeAuditResult = (
+  projectId: number,
+  auditKind: string,
+  rawOutput: string,
+): Promise<AuditStoredResult> =>
+  invoke('store_audit_result', { projectId, auditKind, rawOutput });
+
+export const getProjectAudits = (projectId: number): Promise<AuditRecord[]> =>
+  invoke('get_project_audits', { projectId });
+
+export const getAuditDetail = (auditId: number): Promise<AuditWithFindings | null> =>
+  invoke('get_audit_detail', { auditId });
+
+export const updateFindingStatus = (
+  findingId: number,
+  status: string,
+): Promise<void> =>
+  invoke('update_finding_status', { findingId, status });
