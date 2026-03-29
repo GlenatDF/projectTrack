@@ -5,7 +5,7 @@ import {
   Bot, Sparkles, FileText, GitBranch, AlertTriangle,
   Download, Activity, CheckCircle2, BarChart3,
   HelpCircle, XCircle, Circle, Star, ClipboardList, ShieldAlert,
-  MessageSquare, Wrench, Wand2, FlaskConical, Hammer,
+  MessageSquare, Wrench, Wand2, FlaskConical, Hammer, Search,
 } from 'lucide-react';
 
 /* ── Section definitions ──────────────────────────────────────────── */
@@ -17,6 +17,7 @@ const sections = [
   { id: 'project-detail',    label: 'Project Detail' },
   { id: 'planning',          label: 'Planning' },
   { id: 'session',           label: 'Claude Session' },
+  { id: 'audits',            label: 'Audits' },
   { id: 'discover',          label: 'Discover' },
   { id: 'settings',          label: 'Settings' },
   { id: 'testing-standard',  label: 'Testing Standard' },
@@ -313,19 +314,16 @@ export default function Manual() {
               </div>
             </Card>
             <Card>
-              <SubHeading>Claude skills — 7 files in .claude/skills/</SubHeading>
+              <SubHeading>Claude skills — 4 files in .claude/skills/</SubHeading>
               <p className="text-xs text-slate-500 mb-3">
                 Skill files are plain markdown. Claude Code reads them when you invoke the skill by name.
                 Generated when <strong className="text-slate-300">Generate Claude skills</strong> is enabled.
               </p>
               <div className="space-y-0">
-                <FeatureRow icon={Bot}          label="project-kickoff"     desc="Read project docs and propose a scoped task plan before writing any code." iconColor="text-violet-400" />
-                <FeatureRow icon={ClipboardList} label="task-planning"       desc="Break features into safe, reviewable steps. Resolve unknowns before committing to a plan." iconColor="text-slate-400" />
-                <FeatureRow icon={ShieldAlert}  label="safe-feature-build"  desc="Before/during/after checklist for building features without breaking existing behaviour." iconColor="text-amber-400" />
-                <FeatureRow icon={FileText}     label="update-decision-log" desc="Log architectural decisions with context, options considered, and rationale." iconColor="text-slate-400" />
-                <FeatureRow icon={RefreshCw}    label="doc-maintenance"     desc="Keep living docs in sync — what to update and when after each session." iconColor="text-cyan-400" />
-                <FeatureRow icon={Wrench}       label="ui-readability"      desc="Readability, contrast, and visual warmth checklist for UI work." iconColor="text-blue-400" />
-                <FeatureRow icon={Plus}         label="testing-discipline"  desc="Honest testing reporting — distinguishes build checks, manual testing, and automated tests." iconColor="text-green-400" />
+                <FeatureRow icon={Bot}          label="project-kickoff"    desc="Read project docs and propose a scoped task plan before writing any code." iconColor="text-violet-400" />
+                <FeatureRow icon={ClipboardList} label="feature-chunking"  desc="Explore first, break into reviewable chunks, implement one at a time, report testing honestly." iconColor="text-slate-400" />
+                <FeatureRow icon={Wrench}       label="ui-readability"     desc="Readability, contrast, and visual warmth checklist for UI work." iconColor="text-blue-400" />
+                <FeatureRow icon={FlaskConical} label="testing-discipline" desc="Honest testing reporting — distinguishes build checks, manual testing, and automated tests." iconColor="text-green-400" />
               </div>
             </Card>
           </section>
@@ -521,6 +519,60 @@ export default function Manual() {
                 Install it from <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">claude.ai/code</code>{' '}
                 and verify with <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono">claude --version</code> in a terminal.
                 The project must also have a valid local repo path set.
+              </p>
+            </Card>
+          </section>
+
+          {/* ─── Audits ───────────────────── */}
+          <section className="mb-8">
+            <SectionHeading
+              id="audits"
+              icon={Search}
+              title="Audits"
+              subtitle="AI-powered codebase reviews: security, performance, and reliability"
+            />
+            <Card className="mb-3">
+              <p className="text-xs text-slate-500 mb-3">
+                The <strong className="text-slate-300">Audits tab</strong> (4th tab in Project Detail) runs
+                structured AI reviews of your codebase and stores the findings. Audits are scoped to a project
+                and do not require a git scan.
+              </p>
+              <SubHeading>Audit kinds</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={Search}       label="Full codebase"  desc="A broad review covering overall code quality, structure, and maintainability." iconColor="text-slate-400" />
+                <FeatureRow icon={ShieldAlert}  label="Security"       desc="Identifies vulnerabilities, unsafe patterns, and exposure risks." iconColor="text-red-400" />
+                <FeatureRow icon={Activity}     label="Performance"    desc="Surfaces slow paths, inefficient queries, and unnecessary re-renders." iconColor="text-cyan-400" />
+                <FeatureRow icon={AlertTriangle} label="Reliability"   desc="Flags error handling gaps, race conditions, and fragile dependencies." iconColor="text-amber-400" />
+              </div>
+            </Card>
+            <Card className="mb-3">
+              <SubHeading>Depth options</SubHeading>
+              <div className="space-y-0">
+                <FeatureRow icon={CheckCircle2} label="Quick" desc="Faster, higher-level scan — good for a regular health check between features." iconColor="text-slate-400" />
+                <FeatureRow icon={Search}       label="Full"  desc="Deeper analysis — best before a release or when investigating a specific problem area." iconColor="text-violet-400" />
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Click <strong className="text-slate-300">Run Audit ↓</strong> and select a kind + depth from
+                the dropdown. The audit runs via <code className="bg-surface border border-border rounded px-1 py-0.5 font-mono text-[11px]">claude --print</code> and
+                results are imported automatically. Requires Claude Code CLI in your PATH.
+              </p>
+            </Card>
+            <Card>
+              <SubHeading>Findings &amp; actions</SubHeading>
+              <p className="text-xs text-slate-500 mb-3">
+                Each audit produces a list of findings. Click a finding to expand its full description,
+                file reference, and suggested fix.
+              </p>
+              <div className="space-y-0">
+                <FeatureRow icon={Circle}       label="Open"         desc="Finding has not been addressed yet." iconColor="text-slate-500" />
+                <FeatureRow icon={CheckCircle2} label="Resolved"     desc="Fixed — mark when the underlying issue has been addressed." iconColor="text-green-400" />
+                <FeatureRow icon={XCircle}      label="Won't fix"    desc="Acknowledged but intentionally not addressed." iconColor="text-slate-500" />
+                <FeatureRow icon={ClipboardList} label="Task created" desc="A project task was generated from this finding and linked to the plan." iconColor="text-violet-400" />
+              </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Use <strong className="text-slate-300">Create task →</strong> on any finding to add it
+                directly to the project plan as a task. The finding status updates to{' '}
+                <strong className="text-slate-300">Task created</strong> automatically.
               </p>
             </Card>
           </section>
