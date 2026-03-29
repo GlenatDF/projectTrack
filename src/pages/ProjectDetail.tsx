@@ -25,18 +25,11 @@ import { Modal } from '../components/ui/Modal';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { relativeTime, shortHash } from '../lib/utils';
 import { computeHealth } from '../lib/health';
-import { PlanningDocs } from '../components/planning/PlanningDocs';
-import { GeneratePlanModal } from '../components/planning/GeneratePlanModal';
-import { PhasesView } from '../components/planning/PhasesView';
-import { RisksView } from '../components/planning/RisksView';
 import { ClaudeSessionView } from '../components/ClaudeSessionView';
 import { AuditsView } from '../components/audits/AuditsView';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
-  { key: 'docs',     label: 'Docs' },
-  { key: 'plan',     label: 'Tasks' },
-  { key: 'risks',    label: 'Risks' },
   { key: 'session',  label: 'Session' },
   { key: 'audits',   label: 'Audits' },
 ] as const;
@@ -70,9 +63,6 @@ export default function ProjectDetail() {
 
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['overview']));
-  const [planVersion, setPlanVersion] = useState(0);
-  const [showGeneratePlan, setShowGeneratePlan] = useState(false);
-
   const [itermAvailable, setItermAvailable] = useState(false);
   const [gitStatusOutput, setGitStatusOutput] = useState<string | null>(null);
   const [gitStatusLoading, setGitStatusLoading] = useState(false);
@@ -91,12 +81,6 @@ export default function ProjectDetail() {
   function handleSwitchTab(tab: Tab) {
     setActiveTab(tab);
     setVisitedTabs(prev => new Set([...prev, tab]));
-    if (tab === 'plan') setPlanVersion(v => v + 1);
-  }
-
-  function handlePlanImported() {
-    setPlanVersion(v => v + 1);
-    handleSwitchTab('plan');
   }
 
   const load = useCallback(async () => {
@@ -301,10 +285,6 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button variant="ghost" size="sm" onClick={() => setShowGeneratePlan(true)}
-              className="text-violet-400 hover:bg-violet-500/10">
-              <Sparkles size={12} /> Plan
-            </Button>
             <Button variant="secondary" size="sm" onClick={() => navigate(`/projects/${projectId}/edit`)}>
               <Edit2 size={12} /> Edit
             </Button>
@@ -364,21 +344,6 @@ export default function ProjectDetail() {
           )}
 
           {/* Tab panels: mount on first visit, then CSS hide */}
-          <div className={activeTab === 'docs' ? 'block' : 'hidden'}>
-            {visitedTabs.has('docs') && (
-              <PlanningDocs projectId={projectId} onNavigateToPlan={() => handleSwitchTab('plan')} />
-            )}
-          </div>
-          <div className={activeTab === 'plan' ? 'block' : 'hidden'}>
-            {visitedTabs.has('plan') && (
-              <PhasesView projectId={projectId} planVersion={planVersion} isActive={activeTab === 'plan'} onGeneratePlan={() => setShowGeneratePlan(true)} />
-            )}
-          </div>
-          <div className={activeTab === 'risks' ? 'block' : 'hidden'}>
-            {visitedTabs.has('risks') && (
-              <RisksView projectId={projectId} planVersion={planVersion} />
-            )}
-          </div>
           <div className={activeTab === 'session' ? 'block' : 'hidden'}>
             {visitedTabs.has('session') && (
               <ClaudeSessionView project={project} />
@@ -714,15 +679,6 @@ export default function ProjectDetail() {
           </div>
         </div>
       </div>
-
-      {/* Generate Plan Modal */}
-      {showGeneratePlan && (
-        <GeneratePlanModal
-          projectId={projectId}
-          onClose={() => setShowGeneratePlan(false)}
-          onImported={handlePlanImported}
-        />
-      )}
 
       {/* Delete confirmation modal */}
       <Modal
