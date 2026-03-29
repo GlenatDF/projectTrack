@@ -1784,6 +1784,7 @@ pub fn fetch_project_plan(conn: &Connection, project_id: i64) -> Result<ProjectP
 pub fn update_task_status_record(
     conn: &Connection,
     task_id: i64,
+    project_id: i64,
     status: &str,
 ) -> Result<ProjectTask> {
     match status {
@@ -1791,26 +1792,26 @@ pub fn update_task_status_record(
             "UPDATE project_tasks SET status = ?1, user_modified = 1,
              started_at = COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%SZ','now')),
              last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-             WHERE id = ?2",
-            params![status, task_id],
+             WHERE id = ?2 AND project_id = ?3",
+            params![status, task_id, project_id],
         )?,
         "done" => conn.execute(
             "UPDATE project_tasks SET status = ?1, user_modified = 1,
              completed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
              last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-             WHERE id = ?2",
-            params![status, task_id],
+             WHERE id = ?2 AND project_id = ?3",
+            params![status, task_id, project_id],
         )?,
         "paused" | "blocked" => conn.execute(
             "UPDATE project_tasks SET status = ?1, user_modified = 1,
              last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-             WHERE id = ?2",
-            params![status, task_id],
+             WHERE id = ?2 AND project_id = ?3",
+            params![status, task_id, project_id],
         )?,
         _ => conn.execute(
             "UPDATE project_tasks SET status = ?1, user_modified = 1,
-             completed_at = NULL WHERE id = ?2",
-            params![status, task_id],
+             completed_at = NULL WHERE id = ?2 AND project_id = ?3",
+            params![status, task_id, project_id],
         )?,
     };
     conn.query_row(
@@ -1826,13 +1827,14 @@ pub fn update_task_status_record(
 pub fn update_task_progress_note_record(
     conn: &Connection,
     task_id: i64,
+    project_id: i64,
     note: &str,
 ) -> Result<ProjectTask> {
     conn.execute(
         "UPDATE project_tasks SET progress_note = ?1, user_modified = 1,
          last_worked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-         WHERE id = ?2",
-        params![note, task_id],
+         WHERE id = ?2 AND project_id = ?3",
+        params![note, task_id, project_id],
     )?;
     conn.query_row(
         "SELECT id, project_id, phase_id, title, description, category,
@@ -1847,11 +1849,12 @@ pub fn update_task_progress_note_record(
 pub fn update_phase_status_record(
     conn: &Connection,
     phase_id: i64,
+    project_id: i64,
     status: &str,
 ) -> Result<ProjectPhase> {
     conn.execute(
-        "UPDATE project_phases SET status = ?1, user_modified = 1 WHERE id = ?2",
-        params![status, phase_id],
+        "UPDATE project_phases SET status = ?1, user_modified = 1 WHERE id = ?2 AND project_id = ?3",
+        params![status, phase_id, project_id],
     )?;
     conn.query_row(
         "SELECT id, project_id, phase_number, name, description, goals,
@@ -2279,12 +2282,13 @@ pub fn fetch_audit_with_findings(
 pub fn update_finding_status(
     conn: &Connection,
     finding_id: i64,
+    project_id: i64,
     status: &str,
 ) -> std::result::Result<(), String> {
     validate_finding_status(status)?;
     conn.execute(
-        "UPDATE audit_findings SET status = ?1 WHERE id = ?2",
-        params![status, finding_id],
+        "UPDATE audit_findings SET status = ?1 WHERE id = ?2 AND project_id = ?3",
+        params![status, finding_id, project_id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -2298,10 +2302,11 @@ pub fn create_task_from_finding(
     finding_id: i64,
     project_id: i64,
 ) -> std::result::Result<i64, String> {
-    // Fetch the finding
+    // Fetch the finding, verifying it belongs to the supplied project_id
     let (title, description, category, file_ref, impact) = conn.query_row(
-        "SELECT title, description, category, file_ref, impact FROM audit_findings WHERE id = ?1",
-        params![finding_id],
+        "SELECT title, description, category, file_ref, impact
+         FROM audit_findings WHERE id = ?1 AND project_id = ?2",
+        params![finding_id, project_id],
         |row| Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
@@ -2309,7 +2314,7 @@ pub fn create_task_from_finding(
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
         )),
-    ).map_err(|e| format!("Finding not found: {e}"))?;
+    ).map_err(|_| format!("Finding {finding_id} not found for project {project_id}"))?;
 
     // Build task description from finding fields
     let mut task_desc = String::new();

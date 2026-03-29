@@ -66,9 +66,13 @@ export default function ProjectList() {
     const scannable = projects.filter((p) => p.local_repo_path.trim());
     let done = 0, failed = 0;
     for (let i = 0; i < scannable.length; i++) {
+      const p = scannable[i];
       setScanProgress(`Scanning ${i + 1}/${scannable.length}…`);
-      try { await scanProject(scannable[i].id); done++; }
-      catch { failed++; }
+      try {
+        const scan = await scanProject(p.id);
+        setLatestScans((prev) => ({ ...prev, [p.id]: scan }));
+        done++;
+      } catch { failed++; }
     }
     setScanProgress(null);
     setScanResult(`✓ ${done} scanned${failed ? `, ${failed} failed` : ''}`);

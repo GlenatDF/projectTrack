@@ -84,7 +84,7 @@ export function PhasesView({ projectId, planVersion, isActive, onGeneratePlan }:
       setEditingNote(prev => new Set(prev).add(task.id));
     }
     try {
-      const updated = await updateTaskStatus(task.id, status);
+      const updated = await updateTaskStatus(task.id, projectId, status);
       setPlan(prev => prev ? {
         ...prev,
         tasks: prev.tasks.map(t => t.id === task.id ? updated : t),
@@ -103,7 +103,7 @@ export function PhasesView({ projectId, planVersion, isActive, onGeneratePlan }:
       phases: prev.phases.map(p => p.id === phase.id ? { ...p, status, user_modified: true } : p),
     } : prev);
     try {
-      const updated = await updatePhaseStatus(phase.id, status);
+      const updated = await updatePhaseStatus(phase.id, projectId, status);
       setPlan(prev => prev ? {
         ...prev,
         phases: prev.phases.map(p => p.id === phase.id ? updated : p),
@@ -118,7 +118,7 @@ export function PhasesView({ projectId, planVersion, isActive, onGeneratePlan }:
 
   async function handleSaveNote(task: ProjectTask, note: string) {
     try {
-      const updated = await updateTaskProgressNote(task.id, note);
+      const updated = await updateTaskProgressNote(task.id, projectId, note);
       setPlan(prev => prev ? {
         ...prev,
         tasks: prev.tasks.map(t => t.id === task.id ? updated : t),

@@ -64,7 +64,7 @@ export function AuditDetail({ auditId, projectId, onBack, onTaskCreated }: Props
   }, [auditId]);
 
   function handleStatusChange(findingId: number, status: FindingStatus) {
-    updateFindingStatus(findingId, status).catch(() => {});
+    updateFindingStatus(findingId, projectId, status).catch((e) => console.error('update_finding_status:', e));
     setData(prev => {
       if (!prev) return prev;
       return {
@@ -244,13 +244,17 @@ interface FindingCardProps {
 
 function FindingCard({ finding, projectId, onStatusChange, onTaskCreated }: FindingCardProps) {
   const [creatingTask, setCreatingTask] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   async function handleCreateTask() {
     setCreatingTask(true);
+    setCreateError(null);
     try {
       const taskId = await createTaskFromFinding(finding.id, projectId);
       onStatusChange(finding.id, 'task_created');
       onTaskCreated?.(finding.id, taskId);
+    } catch (e) {
+      setCreateError(String(e));
     } finally {
       setCreatingTask(false);
     }
@@ -338,6 +342,9 @@ function FindingCard({ finding, projectId, onStatusChange, onTaskCreated }: Find
           </div>
         )}
       </div>
+      {createError && (
+        <p className="text-[11px] text-red-400">{createError}</p>
+      )}
     </div>
   );
 }

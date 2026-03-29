@@ -876,6 +876,7 @@ pub fn get_project_plan(
 #[tauri::command]
 pub fn update_task_status(
     task_id: i64,
+    project_id: i64,
     status: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectTask, String> {
@@ -884,22 +885,24 @@ pub fn update_task_status(
         return Err(format!("Invalid task status: {status}"));
     }
     let conn = db_conn!(state);
-    db::update_task_status_record(&conn, task_id, &status).map_err(|e| e.to_string())
+    db::update_task_status_record(&conn, task_id, project_id, &status).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_task_progress_note(
     task_id: i64,
+    project_id: i64,
     note: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectTask, String> {
     let conn = db_conn!(state);
-    db::update_task_progress_note_record(&conn, task_id, &note).map_err(|e| e.to_string())
+    db::update_task_progress_note_record(&conn, task_id, project_id, &note).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_phase_status(
     phase_id: i64,
+    project_id: i64,
     status: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectPhase, String> {
@@ -908,7 +911,7 @@ pub fn update_phase_status(
         return Err(format!("Invalid phase status: {status}"));
     }
     let conn = db_conn!(state);
-    db::update_phase_status_record(&conn, phase_id, &status).map_err(|e| e.to_string())
+    db::update_phase_status_record(&conn, phase_id, project_id, &status).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1497,11 +1500,12 @@ pub fn get_audit_detail(
 #[tauri::command]
 pub fn update_finding_status(
     finding_id: i64,
+    project_id: i64,
     status: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let conn = db_conn!(state);
-    db::update_finding_status(&conn, finding_id, &status)
+    db::update_finding_status(&conn, finding_id, project_id, &status)
 }
 
 /// Create a project task from an audit finding and link them together.

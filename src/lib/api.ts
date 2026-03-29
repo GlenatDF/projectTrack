@@ -181,21 +181,24 @@ export const getProjectPlan = (projectId: number): Promise<ProjectPlan> =>
 
 export const updateTaskStatus = (
   taskId: number,
+  projectId: number,
   status: string,
 ): Promise<ProjectTask> =>
-  invoke('update_task_status', { taskId, status });
+  invoke('update_task_status', { taskId, projectId, status });
 
 export const updateTaskProgressNote = (
   taskId: number,
+  projectId: number,
   note: string,
 ): Promise<ProjectTask> =>
-  invoke('update_task_progress_note', { taskId, note });
+  invoke('update_task_progress_note', { taskId, projectId, note });
 
 export const updatePhaseStatus = (
   phaseId: number,
+  projectId: number,
   status: string,
 ): Promise<ProjectPhase> =>
-  invoke('update_phase_status', { phaseId, status });
+  invoke('update_phase_status', { phaseId, projectId, status });
 
 export const getAiPlanRuns = (projectId: number): Promise<AiPlanRun[]> =>
   invoke('get_ai_plan_runs', { projectId });
@@ -285,9 +288,10 @@ export const getAuditDetail = (auditId: number): Promise<AuditWithFindings | nul
 
 export const updateFindingStatus = (
   findingId: number,
+  projectId: number,
   status: string,
 ): Promise<void> =>
-  invoke('update_finding_status', { findingId, status });
+  invoke('update_finding_status', { findingId, projectId, status });
 
 export const createTaskFromFinding = (findingId: number, projectId: number): Promise<number> =>
   invoke('create_task_from_finding', { findingId, projectId });
