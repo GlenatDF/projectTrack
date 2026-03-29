@@ -116,6 +116,7 @@ pub fn run() {
             commands::start_claude_session,
             commands::send_session_message,
             commands::reset_claude_session,
+            commands::update_session_notes,
             // Settings
             commands::get_settings,
             commands::update_setting,
@@ -132,6 +133,7 @@ pub fn run() {
             commands::get_project_audits,
             commands::get_audit_detail,
             commands::update_finding_status,
+            commands::create_task_from_finding,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

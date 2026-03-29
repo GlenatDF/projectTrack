@@ -1041,6 +1041,18 @@ pub fn reset_claude_session(
     db::clear_project_session_id(&conn, project_id).map_err(|e| e.to_string())
 }
 
+/// Update the session handoff notes for a project.
+/// These notes are included in every opener prompt.
+#[tauri::command]
+pub fn update_session_notes(
+    project_id: i64,
+    notes: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = db_conn!(state);
+    db::update_session_notes(&conn, project_id, &notes).map_err(|e| e.to_string())
+}
+
 /// Spawn `claude --print` with the given prompt via stdin.
 ///
 /// `resume` controls the session flag:
@@ -1490,4 +1502,16 @@ pub fn update_finding_status(
 ) -> Result<(), String> {
     let conn = db_conn!(state);
     db::update_finding_status(&conn, finding_id, &status)
+}
+
+/// Create a project task from an audit finding and link them together.
+/// Returns the new task id.
+#[tauri::command]
+pub fn create_task_from_finding(
+    finding_id: i64,
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let mut conn = db_conn!(state);
+    db::create_task_from_finding(&mut conn, finding_id, project_id)
 }

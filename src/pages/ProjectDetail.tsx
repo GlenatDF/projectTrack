@@ -30,6 +30,7 @@ import { GeneratePlanModal } from '../components/planning/GeneratePlanModal';
 import { PhasesView } from '../components/planning/PhasesView';
 import { RisksView } from '../components/planning/RisksView';
 import { ClaudeSessionView } from '../components/ClaudeSessionView';
+import { AuditsView } from '../components/audits/AuditsView';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -37,6 +38,7 @@ const TABS = [
   { key: 'plan',     label: 'Tasks' },
   { key: 'risks',    label: 'Risks' },
   { key: 'session',  label: 'Session' },
+  { key: 'audits',   label: 'Audits' },
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
@@ -379,7 +381,12 @@ export default function ProjectDetail() {
           </div>
           <div className={activeTab === 'session' ? 'block' : 'hidden'}>
             {visitedTabs.has('session') && (
-              <ClaudeSessionView projectId={projectId} projectName={project.name} />
+              <ClaudeSessionView project={project} />
+            )}
+          </div>
+          <div className={activeTab === 'audits' ? 'block' : 'hidden'}>
+            {visitedTabs.has('audits') && (
+              <AuditsView projectId={projectId} />
             )}
           </div>
 

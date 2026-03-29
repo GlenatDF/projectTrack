@@ -1942,6 +1942,14 @@ pub fn clear_project_session_id(conn: &Connection, project_id: i64) -> Result<()
     Ok(())
 }
 
+pub fn update_session_notes(conn: &Connection, project_id: i64, notes: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE projects SET session_handoff_notes = ?1 WHERE id = ?2",
+        params![notes, project_id],
+    )?;
+    Ok(())
+}
+
 /// Build the project opener prompt from live project fields and docs.
 /// Used as the first message when starting a Claude session.
 pub fn assemble_opener_prompt(conn: &Connection, project_id: i64) -> Result<String> {
@@ -2280,6 +2288,60 @@ pub fn update_finding_status(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Create a task from an audit finding.
+/// Inserts a task (no phase — sits at top level), then links the finding to it.
+/// Returns the new task id.
+pub fn create_task_from_finding(
+    conn: &mut Connection,
+    finding_id: i64,
+    project_id: i64,
+) -> std::result::Result<i64, String> {
+    // Fetch the finding
+    let (title, description, category, file_ref, impact) = conn.query_row(
+        "SELECT title, description, category, file_ref, impact FROM audit_findings WHERE id = ?1",
+        params![finding_id],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+        )),
+    ).map_err(|e| format!("Finding not found: {e}"))?;
+
+    // Build task description from finding fields
+    let mut task_desc = String::new();
+    if !category.is_empty() {
+        task_desc.push_str(&format!("Category: {category}\n"));
+    }
+    if !file_ref.is_empty() {
+        task_desc.push_str(&format!("Location: {file_ref}\n"));
+    }
+    if !description.is_empty() {
+        task_desc.push_str(&format!("\n{description}"));
+    }
+    if !impact.is_empty() {
+        task_desc.push_str(&format!("\n\nImpact: {impact}"));
+    }
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO project_tasks (project_id, phase_id, title, description, category, status, ai_generated, user_modified)
+         VALUES (?1, NULL, ?2, ?3, 'fix', 'pending', 0, 1)",
+        params![project_id, title, task_desc.trim()],
+    ).map_err(|e| e.to_string())?;
+    let task_id = tx.last_insert_rowid();
+
+    tx.execute(
+        "UPDATE audit_findings SET status = 'task_created', task_id = ?1 WHERE id = ?2",
+        params![task_id, finding_id],
+    ).map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(task_id)
 }
 
 /// Store a fully-parsed audit result in a single transaction.

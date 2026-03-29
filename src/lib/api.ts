@@ -220,6 +220,9 @@ export const sendSessionMessage = (
 export const resetClaudeSession = (projectId: number): Promise<void> =>
   invoke('reset_claude_session', { projectId });
 
+export const updateSessionNotes = (projectId: number, notes: string): Promise<void> =>
+  invoke('update_session_notes', { projectId, notes });
+
 // ── Settings ───────────────────────────────────────────────────────────────────
 
 export const getSettings = (): Promise<Record<string, string>> =>
@@ -285,3 +288,6 @@ export const updateFindingStatus = (
   status: string,
 ): Promise<void> =>
   invoke('update_finding_status', { findingId, status });
+
+export const createTaskFromFinding = (findingId: number, projectId: number): Promise<number> =>
+  invoke('create_task_from_finding', { findingId, projectId });
