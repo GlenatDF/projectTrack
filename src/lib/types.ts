@@ -378,6 +378,7 @@ export const RISK_LEVEL_COLORS: Record<RiskLevel, string> = {
 // ── Audits ────────────────────────────────────────────────────────────────────
 
 export type AuditKind = 'full_codebase' | 'security' | 'performance' | 'reliability';
+export type AuditDepth = 'quick' | 'full';
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low';
 export type FindingClassification = 'confirmed' | 'likely' | 'needs_verification';
 export type FindingStatus = 'open' | 'resolved' | 'wont_fix' | 'task_created';
@@ -387,6 +388,7 @@ export interface AuditRecord {
   id: number;
   project_id: number;
   audit_kind: AuditKind;
+  audit_depth: AuditDepth;
   score: number | null;
   score_label: string;
   summary: string;

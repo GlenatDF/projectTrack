@@ -1375,15 +1375,17 @@ pub fn scaffold_full_project(
 // ── Audits ─────────────────────────────────────────────────────────────────────
 
 /// Assemble a codebase audit prompt for the project and return it (+ any warnings).
-/// The audit_kind controls the focus: "full_codebase" | "security" | "performance" | "reliability".
+/// audit_kind: "full_codebase" | "security" | "performance" | "reliability"
+/// audit_depth: "quick" | "full"
 #[tauri::command]
 pub fn assemble_audit_prompt(
     project_id: i64,
     audit_kind: String,
+    audit_depth: String,
     state: State<'_, AppState>,
 ) -> Result<db::AssembledPrompt, String> {
     let conn = db_conn!(state);
-    db::assemble_audit_prompt(&conn, project_id, &audit_kind).map_err(|e| e.to_string())
+    db::assemble_audit_prompt(&conn, project_id, &audit_kind, &audit_depth).map_err(|e| e.to_string())
 }
 
 /// Assemble the audit prompt and pipe it to `claude --print`, returning the raw response.
@@ -1392,12 +1394,13 @@ pub fn assemble_audit_prompt(
 pub fn run_audit_with_claude_cli(
     project_id: i64,
     audit_kind: String,
+    audit_depth: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     // Assemble under a short-lived lock
     let prompt = {
         let conn = db_conn!(state);
-        db::assemble_audit_prompt(&conn, project_id, &audit_kind)
+        db::assemble_audit_prompt(&conn, project_id, &audit_kind, &audit_depth)
             .map_err(|e| e.to_string())?
             .prompt
     };
@@ -1450,11 +1453,12 @@ pub fn run_audit_with_claude_cli(
 pub fn store_audit_result(
     project_id: i64,
     audit_kind: String,
+    audit_depth: String,
     raw_output: String,
     state: State<'_, AppState>,
 ) -> Result<db::AuditStoredResult, String> {
     let mut conn = db_conn!(state);
-    db::parse_and_store_audit(&mut conn, project_id, &audit_kind, &raw_output)
+    db::parse_and_store_audit(&mut conn, project_id, &audit_kind, &audit_depth, &raw_output)
 }
 
 /// Return all audit records for a project, newest first. Findings are not included.

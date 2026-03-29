@@ -260,18 +260,19 @@ export const scaffoldFullProject = (params: {
 
 // ── Audits ────────────────────────────────────────────────────────────────────
 
-export const assembleAuditPrompt = (projectId: number, auditKind: string): Promise<AssembledPrompt> =>
-  invoke('assemble_audit_prompt', { projectId, auditKind });
+export const assembleAuditPrompt = (projectId: number, auditKind: string, auditDepth: string): Promise<AssembledPrompt> =>
+  invoke('assemble_audit_prompt', { projectId, auditKind, auditDepth });
 
-export const runAuditWithClaudeCli = (projectId: number, auditKind: string): Promise<string> =>
-  invoke('run_audit_with_claude_cli', { projectId, auditKind });
+export const runAuditWithClaudeCli = (projectId: number, auditKind: string, auditDepth: string): Promise<string> =>
+  invoke('run_audit_with_claude_cli', { projectId, auditKind, auditDepth });
 
 export const storeAuditResult = (
   projectId: number,
   auditKind: string,
+  auditDepth: string,
   rawOutput: string,
 ): Promise<AuditStoredResult> =>
-  invoke('store_audit_result', { projectId, auditKind, rawOutput });
+  invoke('store_audit_result', { projectId, auditKind, auditDepth, rawOutput });
 
 export const getProjectAudits = (projectId: number): Promise<AuditRecord[]> =>
   invoke('get_project_audits', { projectId });

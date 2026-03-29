@@ -11,7 +11,7 @@ import {
   runAuditWithClaudeCli,
   storeAuditResult,
 } from '../../lib/api';
-import type { AssembledPrompt, AuditKind, AuditStoredResult } from '../../lib/types';
+import type { AssembledPrompt, AuditDepth, AuditKind, AuditStoredResult } from '../../lib/types';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 
@@ -25,20 +25,26 @@ type Step =
   | 'error';
 
 const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
-  full_codebase: 'Full codebase audit',
-  security:      'Security audit',
-  performance:   'Performance audit',
-  reliability:   'Reliability audit',
+  full_codebase: 'codebase audit',
+  security:      'security audit',
+  performance:   'performance audit',
+  reliability:   'reliability audit',
+};
+
+const AUDIT_DEPTH_LABELS: Record<AuditDepth, string> = {
+  quick: 'Quick',
+  full:  'Full',
 };
 
 interface Props {
   projectId: number;
   auditKind: AuditKind;
+  auditDepth: AuditDepth;
   onClose: () => void;
   onStored: (auditId: number) => void;
 }
 
-export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
+export function AuditModal({ projectId, auditKind, auditDepth, onClose, onStored }: Props) {
   const [step, setStep]                   = useState<Step>('assembling');
   const [assembled, setAssembled]         = useState<AssembledPrompt | null>(null);
   const [pastedResponse, setPastedResponse] = useState('');
@@ -49,7 +55,7 @@ export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const a = await assembleAuditPrompt(projectId, auditKind);
+        const a = await assembleAuditPrompt(projectId, auditKind, auditDepth);
         setAssembled(a);
         setStep('prompt');
       } catch (e) {
@@ -57,7 +63,7 @@ export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
         setStep('error');
       }
     })();
-  }, [projectId, auditKind]);
+  }, [projectId, auditKind, auditDepth]);
 
   useEffect(() => {
     if (step === 'pasting') {
@@ -68,9 +74,9 @@ export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
   async function handleRunWithCli() {
     setStep('running');
     try {
-      const raw = await runAuditWithClaudeCli(projectId, auditKind);
+      const raw = await runAuditWithClaudeCli(projectId, auditKind, auditDepth);
       setStep('storing');
-      const r = await storeAuditResult(projectId, auditKind, raw);
+      const r = await storeAuditResult(projectId, auditKind, auditDepth, raw);
       setResult(r);
       setStep('done');
     } catch (e) {
@@ -83,7 +89,7 @@ export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
     if (!pastedResponse.trim()) return;
     setStep('storing');
     try {
-      const r = await storeAuditResult(projectId, auditKind, pastedResponse.trim());
+      const r = await storeAuditResult(projectId, auditKind, auditDepth, pastedResponse.trim());
       setResult(r);
       setStep('done');
     } catch (e) {
@@ -135,7 +141,7 @@ export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
     <Modal
       open={true}
       onClose={onClose}
-      title={AUDIT_KIND_LABELS[auditKind]}
+      title={`${AUDIT_DEPTH_LABELS[auditDepth]} ${AUDIT_KIND_LABELS[auditKind]}`}
       size="lg"
       footer={footer}
     >
@@ -223,9 +229,13 @@ export function AuditModal({ projectId, auditKind, onClose, onStored }: Props) {
         {step === 'running' && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
             <Loader2 size={20} className="text-violet-400 animate-spin" />
-            <p className="text-slate-400 text-xs">Running Claude CLI audit…</p>
+            <p className="text-slate-400 text-xs">
+              {auditDepth === 'quick' ? 'Running quick scan…' : 'Running full audit…'}
+            </p>
             <p className="text-slate-600 text-xs">
-              This can take a few minutes while Claude reads the codebase
+              {auditDepth === 'quick'
+                ? 'Claude is scanning key entry points'
+                : 'This can take a few minutes while Claude reads the codebase'}
             </p>
           </div>
         )}

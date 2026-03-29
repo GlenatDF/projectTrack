@@ -276,6 +276,7 @@ CREATE TABLE IF NOT EXISTS project_audits (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     audit_kind       TEXT    NOT NULL DEFAULT 'full_codebase',
+    audit_depth      TEXT    NOT NULL DEFAULT 'full',
     score            REAL,
     score_label      TEXT    NOT NULL DEFAULT '',
     summary          TEXT    NOT NULL DEFAULT '',
@@ -332,6 +333,7 @@ fn run_migrations(conn: &Connection) {
     let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN started_at TEXT", []);
     let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN completed_at TEXT", []);
     let _ = conn.execute("ALTER TABLE project_tasks ADD COLUMN last_worked_at TEXT", []);
+    let _ = conn.execute("ALTER TABLE project_audits ADD COLUMN audit_depth TEXT NOT NULL DEFAULT 'full'", []);
     migrate_add_operating_standard(conn);
 }
 
@@ -788,6 +790,7 @@ pub struct AuditRecord {
     pub id: i64,
     pub project_id: i64,
     pub audit_kind: String,
+    pub audit_depth: String,
     pub score: Option<f64>,
     pub score_label: String,
     pub summary: String,
@@ -846,6 +849,7 @@ pub struct FindingInput {
 pub struct StoreAuditInput {
     pub project_id: i64,
     pub audit_kind: String,
+    pub audit_depth: String,
     pub score: Option<f64>,
     pub score_label: String,
     pub summary: String,
@@ -2126,6 +2130,15 @@ fn validate_audit_kind(s: &str) -> std::result::Result<(), String> {
     }
 }
 
+fn validate_audit_depth(s: &str) -> std::result::Result<(), String> {
+    match s {
+        "quick" | "full" => Ok(()),
+        _ => Err(format!(
+            "Invalid audit_depth \"{s}\": must be quick or full"
+        )),
+    }
+}
+
 fn validate_severity(s: &str) -> std::result::Result<(), String> {
     match s {
         "critical" | "high" | "medium" | "low" => Ok(()),
@@ -2169,15 +2182,16 @@ fn row_to_audit_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditRecord>
         id:              row.get(0)?,
         project_id:      row.get(1)?,
         audit_kind:      row.get(2)?,
-        score:           row.get(3)?,
-        score_label:     row.get(4)?,
-        summary:         row.get(5)?,
-        strengths:       row.get(6)?,
-        recommendations: row.get(7)?,
-        files_reviewed:  row.get(8)?,
-        raw_output:      row.get(9)?,
-        raw_json:        row.get(10)?,
-        created_at:      row.get(11)?,
+        audit_depth:     row.get(3)?,
+        score:           row.get(4)?,
+        score_label:     row.get(5)?,
+        summary:         row.get(6)?,
+        strengths:       row.get(7)?,
+        recommendations: row.get(8)?,
+        files_reviewed:  row.get(9)?,
+        raw_output:      row.get(10)?,
+        raw_json:        row.get(11)?,
+        created_at:      row.get(12)?,
     })
 }
 
@@ -2201,7 +2215,7 @@ fn row_to_audit_finding(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditFindin
 }
 
 const AUDIT_SELECT: &str =
-    "SELECT id, project_id, audit_kind, score, score_label, summary,
+    "SELECT id, project_id, audit_kind, audit_depth, score, score_label, summary,
             strengths, recommendations, files_reviewed, raw_output, raw_json, created_at
      FROM project_audits";
 
@@ -2276,6 +2290,7 @@ pub fn store_audit(
     input: StoreAuditInput,
 ) -> std::result::Result<i64, String> {
     validate_audit_kind(&input.audit_kind)?;
+    validate_audit_depth(&input.audit_depth)?;
     for f in &input.findings {
         validate_severity(&f.severity)?;
         validate_classification(&f.classification)?;
@@ -2295,12 +2310,13 @@ pub fn store_audit(
 
     tx.execute(
         "INSERT INTO project_audits
-             (project_id, audit_kind, score, score_label, summary, strengths,
+             (project_id, audit_kind, audit_depth, score, score_label, summary, strengths,
               recommendations, files_reviewed, raw_output, raw_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             input.project_id,
             input.audit_kind,
+            input.audit_depth,
             input.score,
             input.score_label,
             input.summary,
@@ -2342,12 +2358,13 @@ pub fn store_audit(
 
 // ── Audits: prompt assembly ────────────────────────────────────────────────────
 
-/// Assemble a codebase audit prompt for the given project and audit kind.
+/// Assemble a codebase audit prompt for the given project, kind, and depth.
 /// Returns the prompt text ready to send to Claude.
 pub fn assemble_audit_prompt(
     conn: &Connection,
     project_id: i64,
     audit_kind: &str,
+    audit_depth: &str,
 ) -> Result<AssembledPrompt> {
     let project = fetch_project(conn, project_id)?;
 
@@ -2362,12 +2379,15 @@ pub fn assemble_audit_prompt(
         .ok()
         .filter(|s| s.trim().len() > 80);
 
-    let prompt = build_audit_prompt(&project, audit_kind, brief.as_deref());
+    let prompt = match audit_depth {
+        "quick" => build_quick_audit_prompt(&project, audit_kind, brief.as_deref()),
+        _       => build_full_audit_prompt(&project, audit_kind, brief.as_deref()),
+    };
     Ok(AssembledPrompt { prompt, warnings: vec![] })
 }
 
-fn build_audit_prompt(project: &Project, audit_kind: &str, brief: Option<&str>) -> String {
-    let focus = match audit_kind {
+fn audit_kind_focus(audit_kind: &str) -> &'static str {
+    match audit_kind {
         "security" =>
             "Focus specifically on **security** findings: command/shell injection, SQL injection, \
              path traversal, credential exposure, input validation gaps. \
@@ -2384,24 +2404,102 @@ fn build_audit_prompt(project: &Project, audit_kind: &str, brief: Option<&str>) 
         _ =>
             "Review all categories: correctness, security, reliability, performance, \
              type safety, dead code, and data integrity.",
-    };
+    }
+}
 
-    let mut parts: Vec<String> = Vec::new();
-
-    parts.push("You are performing a structured code quality audit.".to_string());
-
-    // Project context
+fn project_context_block(project: &Project, read_instruction: &str) -> String {
     let mut ctx = format!("## Project: {}", project.name);
     if !project.description.is_empty() {
         ctx.push_str(&format!("\n\n{}", project.description));
     }
     if !project.local_repo_path.is_empty() {
         ctx.push_str(&format!(
-            "\n\n**Repo path:** `{}`\n\nRead the key source files in this repo before writing your response.",
-            project.local_repo_path
+            "\n\n**Repo path:** `{}`\n\n{}",
+            project.local_repo_path,
+            read_instruction,
         ));
     }
-    parts.push(ctx);
+    ctx
+}
+
+/// Quick audit: lighter prompt, limited file reading, simplified JSON output.
+fn build_quick_audit_prompt(project: &Project, audit_kind: &str, brief: Option<&str>) -> String {
+    let focus = audit_kind_focus(audit_kind);
+
+    let mut parts: Vec<String> = Vec::new();
+
+    parts.push(
+        "You are performing a **quick health-check scan** — not a full audit. \
+         Your goal is to surface the most important issues fast."
+            .to_string(),
+    );
+
+    parts.push(project_context_block(
+        project,
+        "Read the **main entry points and key architectural files only** — \
+         do not read every file. Focus on files most likely to contain the kinds of \
+         issues described in the scope below.",
+    ));
+
+    if let Some(b) = brief {
+        parts.push(format!("## Project Brief\n\n{}", b));
+    }
+
+    parts.push(format!("## Audit scope\n\n{}", focus));
+
+    parts.push(
+        "## Rules for a quick scan\n\n\
+         - Read entry points and key files only — skip boilerplate and generated code\n\
+         - Aim for **5–10 findings** maximum; prioritise critical and high severity\n\
+         - Be specific: name the file and the issue clearly\n\
+         - Do not inflate severity — accurate beats alarming\n\
+         - Note at least one genuine strength"
+            .to_string(),
+    );
+
+    parts.push(
+        "## Required output format\n\n\
+         Respond with **only** a JSON object wrapped in a ```json fence — no preamble, no trailing text.\n\
+         \n\
+         ```json\n\
+         {{\n\
+           \"summary\": \"2–3 sentence overall assessment.\",\n\
+           \"strengths\": [\"Specific strength 1\"],\n\
+           \"recommendations\": [\"Most important fix\", \"Next most important fix\"],\n\
+           \"findings\": [\n\
+             {{\n\
+               \"severity\": \"high\",\n\
+               \"category\": \"security\",\n\
+               \"title\": \"Issue title\",\n\
+               \"description\": \"What the issue is and where.\",\n\
+               \"impact\": \"What could go wrong.\"\n\
+             }}\n\
+           ]\n\
+         }}\n\
+         ```\n\
+         \n\
+         Field constraints:\n\
+         - **severity**: `\"critical\"` | `\"high\"` | `\"medium\"` | `\"low\"`\n\
+         - **findings** may be an empty array if the codebase looks clean\n\
+         - Do **not** include score, score_label, files_reviewed, file_ref, fix_size, or classification"
+            .to_string(),
+    );
+
+    parts.join("\n\n")
+}
+
+/// Full audit: comprehensive prompt, read all key files, full JSON output schema.
+fn build_full_audit_prompt(project: &Project, audit_kind: &str, brief: Option<&str>) -> String {
+    let focus = audit_kind_focus(audit_kind);
+
+    let mut parts: Vec<String> = Vec::new();
+
+    parts.push("You are performing a structured code quality audit.".to_string());
+
+    parts.push(project_context_block(
+        project,
+        "Read the key source files in this repo before writing your response.",
+    ));
 
     if let Some(b) = brief {
         parts.push(format!("## Project Brief\n\n{}", b));
@@ -2523,6 +2621,7 @@ pub fn parse_and_store_audit(
     conn: &mut Connection,
     project_id: i64,
     audit_kind: &str,
+    audit_depth: &str,
     raw_output: &str,
 ) -> std::result::Result<AuditStoredResult, String> {
     let stripped = strip_code_fences(raw_output);
@@ -2580,6 +2679,7 @@ pub fn parse_and_store_audit(
     let input = StoreAuditInput {
         project_id,
         audit_kind: audit_kind.to_string(),
+        audit_depth: audit_depth.to_string(),
         score,
         score_label,
         summary,
