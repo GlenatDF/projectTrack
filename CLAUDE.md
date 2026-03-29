@@ -119,6 +119,35 @@ See `.claude/skills/testing-discipline/SKILL.md` for the full testing skill.
 
 ---
 
+## Tauri command conventions
+
+**Rust side:**
+- All commands return `Result<T, String>` — no custom error types, map errors with `.map_err(|e| e.to_string())`
+- Every new command must be registered in `lib.rs` `invoke_handler` **and** have a typed wrapper in `api.ts`
+- Commands are thin orchestrators: put SQL logic in `db.rs`, process logic in dedicated modules
+
+**TypeScript side (`api.ts`):**
+- Wrappers are intentionally thin — just typed `invoke()` calls, no error handling inside them
+- Error handling belongs at the callsite, not in the wrapper
+
+**Callsite error handling patterns (use consistently):**
+- User-facing mutations: `try/catch` → `setError(String(e))`
+- Non-critical / fire-and-forget: `.catch(() => {})` or `.catch(() => fallbackValue)`
+- Availability checks: `.catch(() => false)`
+
+---
+
+## Schema changes (SQLite / rusqlite)
+
+Before writing any migration in `db.rs`:
+
+1. Add columns as nullable or with a DEFAULT — never add NOT NULL without a DEFAULT in the same commit
+2. Never drop or rename a column in the same commit that removes the code referencing it — decouple the two changes
+3. Test the migration against the live DB at `~/Library/Application Support/com.glen.projecttracker/projects.db`, not just a clean install
+4. If backfilling existing rows, do it in the same migration function before any code assumes the new shape
+
+---
+
 ## Working principles
 
 - Prefer clear, readable code over clever code
