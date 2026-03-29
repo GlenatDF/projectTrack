@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Track</title>
+  <meta
+    name="description"
+    content="Project Track is a desktop app for starting AI-assisted software projects properly, generating Claude-ready docs and skills, and tracking work, audits, and project health."
+  />
+  <style>
+    :root {
+      --bg: #f5f2ec;
+      --surface: #fcfaf7;
+      --surface-strong: #f1ece4;
+      --text: #243042;
+      --muted: #5e6a7d;
+      --border: #d8d0c4;
+      --accent: #6f43e6;
+      --accent-soft: #ede6ff;
+      --green: #2e8b57;
+      --amber: #b7791f;
+      --red: #c24141;
+      --shadow: 0 12px 32px rgba(36, 48, 66, 0.08);
+      --radius: 18px;
+      --max: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f7f4ef 0%, #f2ede5 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      background: #f1ebff;
+      color: #4b2cb6;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .container {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(14px);
+      background: rgba(247, 244, 239, 0.82);
+      border-bottom: 1px solid rgba(216, 208, 196, 0.9);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-height: 68px;
+    }
+
+    .brand {
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .brand:hover {
+      text-decoration: none;
+    }
+
+    .topbar-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    .topbar-links a {
+      color: #4c5970;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .topbar-links a:hover {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hero {
+      padding: 72px 0 40px;
+    }
+
+    .hero-card {
+      background: rgba(252, 250, 247, 0.9);
+      border: 1px solid rgba(216, 208, 196, 0.95);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -120px -140px auto;
+      width: 320px;
+      height: 320px;
+      background: radial-gradient(circle, rgba(111, 67, 230, 0.14) 0%, rgba(111, 67, 230, 0) 70%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #4c2bb2;
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.15;
+      margin: 0 0 16px;
+      letter-spacing: -0.02em;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 4.6vw, 4.4rem);
+      max-width: 12ch;
+    }
+
+    h2 {
+      font-size: clamp(1.8rem, 3vw, 2.4rem);
+    }
+
+    h3 { font-size: 1.1rem; }
+
+    p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 1.04rem;
+    }
+
+    .lead {
+      font-size: 1.18rem;
+      max-width: 64ch;
+      color: #42506a;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      transition: transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    .button:hover {
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+
+    .button-primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 10px 24px rgba(111, 67, 230, 0.22);
+    }
+
+    .button-secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .button-sm {
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+    }
+
+    .hero-grid,
+    .grid,
+    .feature-grid,
+    .card-grid,
+    .cta-panel {
+      display: grid;
+      gap: 20px;
+    }
+
+    .hero-grid {
+      grid-template-columns: 1.5fr 1fr;
+      align-items: start;
+      gap: 28px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .stat,
+    .card,
+    .feature,
+    .file-card,
+    .skill-card,
+    .step,
+    .audit-card,
+    .screenshot-frame,
+    .cta-main,
+    .cta-side {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .stat { padding: 18px; }
+
+    .stat strong {
+      display: block;
+      font-size: 1.8rem;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    section { padding: 34px 0; }
+
+    .section-header {
+      margin-bottom: 22px;
+      max-width: 72ch;
+    }
+
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card,
+    .feature,
+    .file-card,
+    .skill-card,
+    .step,
+    .audit-card {
+      padding: 24px;
+    }
+
+    .feature-grid,
+    .card-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .pill-green {
+      background: #e6f6ec;
+      color: #216b42;
+      border-color: #c7e8d3;
+    }
+
+    .pill-purple {
+      background: #eee7ff;
+      color: #5531c2;
+      border-color: #ddd1ff;
+    }
+
+    .pill-amber {
+      background: #fff1db;
+      color: #9b5e10;
+      border-color: #f2ddb5;
+    }
+
+    .list {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .list li {
+      padding-left: 18px;
+      position: relative;
+      color: var(--muted);
+    }
+
+    .list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--accent);
+      font-weight: 900;
+    }
+
+    .code-block {
+      background: #221c35;
+      color: #f3efff;
+      border-radius: var(--radius);
+      padding: 22px;
+      overflow-x: auto;
+      border: 1px solid rgba(111, 67, 230, 0.2);
+      box-shadow: var(--shadow);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .code-block code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    .screenshot-frame {
+      overflow: hidden;
+      background: linear-gradient(180deg, #fffdf9 0%, #f3ede6 100%);
+    }
+
+    .screenshot-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .screenshot-meta {
+      padding: 18px 20px 20px;
+    }
+
+    .screenshot-meta h3 {
+      margin-bottom: 10px;
+    }
+
+    .cta-panel {
+      grid-template-columns: 1.2fr 0.8fr;
+      align-items: stretch;
+    }
+
+    .cta-main,
+    .cta-side {
+      padding: 26px;
+    }
+
+    .kicker {
+      display: inline-block;
+      margin-bottom: 10px;
+      font-size: 0.9rem;
+      font-weight: 800;
+      color: #5531c2;
+      background: #efe8ff;
+      border: 1px solid #ddd1ff;
+      border-radius: 999px;
+      padding: 7px 12px;
+    }
+
+    .link-list {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .link-list a {
+      font-weight: 700;
+    }
+
+    .subtle {
+      color: #66748b;
+      font-size: 0.96rem;
+    }
+
+    .footer {
+      padding: 48px 0 70px;
+    }
+
+    .footer-card {
+      padding: 28px;
+      background: var(--surface-strong);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+    }
+
+    @media (max-width: 920px) {
+      .hero-grid,
+      .grid,
+      .feature-grid,
+      .card-grid,
+      .cta-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-card {
+        padding: 32px 24px;
+      }
+
+      .stats {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .topbar-inner {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 14px 0;
+      }
+
+      .topbar-links {
+        gap: 14px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        width: min(var(--max), calc(100% - 24px));
+      }
+
+      .hero {
+        padding-top: 40px;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-actions {
+        flex-direction: column;
+      }
+
+      .button,
+      .topbar-actions .button {
+        width: 100%;
+      }
+
+      .topbar-links,
+      .topbar-actions {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body id="top">
+  <nav class="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="#top">Project Track</a>
+      <div class="topbar-links">
+        <a href="#what-it-is">About</a>
+        <a href="#new-project">New Project</a>
+        <a href="#claude-files">Claude Files</a>
+        <a href="#skills">Skills</a>
+        <a href="#screenshots">Screenshots</a>
+      </div>
+      <div class="topbar-actions">
+        <a class="button button-secondary button-sm" href="https://github.com/YOUR-USERNAME/projectTrack" target="_blank" rel="noreferrer">View on GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <div class="hero-card">
+        <div class="hero-grid">
+          <div>
+            <div class="eyebrow">Project Track</div>
+            <h1>Project setup for Claude, done properly from day one.</h1>
+            <p class="lead">
+              Project Track is a desktop app for starting AI-assisted software projects properly: create the scaffold, generate the Claude-ready docs and skills, keep implementation in controlled chunks, and build toward tracked audits and project health over time.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#new-project">See the New Project flow</a>
+              <a class="button button-secondary" href="#claude-files">See the Claude files</a>
+            </div>
+          </div>
+          <div class="stats">
+            <div class="stat">
+              <strong>1 flow</strong>
+              <span>Scaffold + docs + skills in one setup</span>
+            </div>
+            <div class="stat">
+              <strong>11 docs</strong>
+              <span>Core markdown files generated for each project</span>
+            </div>
+            <div class="stat">
+              <strong>4 skills</strong>
+              <span>High-value Claude workflows by default</span>
+            </div>
+            <div class="stat">
+              <strong>Audits next</strong>
+              <span>Built to store quality checks and findings over time</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="what-it-is">
+      <div class="container">
+        <div class="section-header">
+          <h2>What Project Track is for</h2>
+          <p>
+            Project Track exists because AI-assisted development works much better when a project starts with clear context, clear rules, and a repeatable structure. Without that, Claude can still write code, but it is more likely to drift, forget important constraints, or build the wrong thing neatly.
+          </p>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h3>Start better</h3>
+            <p>Project Track helps you create a project that is Claude-ready from day one instead of bolting documentation and instructions on afterwards.</p>
+          </div>
+          <div class="card">
+            <h3>Guide Claude properly</h3>
+            <p>It generates the files and skills that give Claude the context it needs about project purpose, architecture, style, testing, and chunked implementation.</p>
+          </div>
+          <div class="card">
+            <h3>Keep development controlled</h3>
+            <p>The workflow pushes work into small reviewed chunks so the project stays understandable and does not become a giant AI splat of code and guesswork.</p>
+          </div>
+          <div class="card">
+            <h3>Track project health</h3>
+            <p>Beyond setup, Project Track is meant to become the place where audits, findings, tasks, and project progress all live together.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-it-works">
+      <div class="container">
+        <div class="section-header">
+          <h2>How it is meant to work</h2>
+          <p>
+            The core idea is simple: one New Project flow that creates the technical scaffold and the Claude guidance pack together. That makes the project immediately usable instead of half-set-up.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <div class="step">
+            <h3>1. Choose New Project</h3>
+            <p>Start from the dashboard and pick the main project type, starter template, and optional stack add-ons.</p>
+          </div>
+          <div class="step">
+            <h3>2. Enter project basics</h3>
+            <p>Add the project name, short description, goal, constraints, preferred coding style, and preferred UI direction.</p>
+          </div>
+          <div class="step">
+            <h3>3. Generate everything together</h3>
+            <p>Project Track scaffolds the project, creates the project record, writes the markdown files, creates the Claude skills, and returns you to a ready-to-work setup.</p>
+          </div>
+        </div>
+        <div class="pill-row">
+          <span class="pill pill-green">Scaffolded app/project</span>
+          <span class="pill pill-purple">Claude docs generated</span>
+          <span class="pill pill-amber">Skills added</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="new-project">
+      <div class="container">
+        <div class="section-header">
+          <h2>The New Project flow</h2>
+          <p>
+            The New Project button is the heart of Project Track. Its job is not just to create a folder; it is to create a project that Claude can work in properly.
+          </p>
+        </div>
+        <div class="card-grid">
+          <div class="feature">
+            <h3>Form inputs</h3>
+            <ul class="list">
+              <li>Project name</li>
+              <li>Short description</li>
+              <li>Project type</li>
+              <li>Starter template</li>
+              <li>Optional stack add-ons</li>
+              <li>Main goal and constraints</li>
+              <li>Preferred coding style and UI style</li>
+              <li>Git repo and Claude skills options</li>
+            </ul>
+          </div>
+          <div class="feature">
+            <h3>Progress tracking</h3>
+            <ul class="list">
+              <li>Create project folder</li>
+              <li>Create base file structure</li>
+              <li>Generate markdown docs</li>
+              <li>Generate Claude skills</li>
+              <li>Generate starter prompt</li>
+              <li>Initialise git repo</li>
+              <li>Save project to app state/database</li>
+            </ul>
+          </div>
+          <div class="feature">
+            <h3>End result</h3>
+            <ul class="list">
+              <li>A scaffolded project</li>
+              <li>A linked project record in Project Track</li>
+              <li>Claude-ready docs and skills inside the repo</li>
+              <li>A clear start point for working with Claude in chunks</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="claude-files">
+      <div class="container">
+        <div class="section-header">
+          <h2>The Claude files that get created</h2>
+          <p>
+            These files are the real operating system for AI-assisted development. They do not exist to look organised. They exist because Claude performs much better when the project explains itself properly.
+          </p>
+        </div>
+        <div class="code-block"><pre><code>project-name/
+├─ CLAUDE.md
+├─ PROJECT_BRIEF.md
+├─ PRODUCT_REQUIREMENTS.md
+├─ TECHNICAL_SPEC.md
+├─ TASKS.md
+├─ DECISION_LOG.md
+├─ SESSION_LOG.md
+├─ RISKS_ASSUMPTIONS_DEPENDENCIES.md
+├─ PROJECT_STAGE.md
+├─ PROJECT_START_PROMPT.md
+├─ README.md
+└─ .claude/
+   └─ skills/
+      ├─ testing-discipline/
+      │  └─ SKILL.md
+      ├─ ui-readability/
+      │  └─ SKILL.md
+      ├─ feature-chunking/
+      │  └─ SKILL.md
+      └─ codebase-audit/
+         └─ SKILL.md</code></pre></div>
+      </div>
+    </section>
+
+    <section id="file-details">
+      <div class="container">
+        <div class="section-header">
+          <h2>What each markdown file is for</h2>
+          <p>
+            The files below are not optional decoration. In practice, they are what stop a Claude-assisted project from becoming vague, forgetful, or inconsistent.
+          </p>
+        </div>
+        <div class="card-grid">
+          <div class="file-card">
+            <h3>CLAUDE.md</h3>
+            <p><strong>Purpose:</strong> the standing operating guide for Claude in this repo.</p>
+            <p><strong>Contains:</strong> project overview, current focus, architecture summary, key files, conventions, testing expectations, UI direction, and when to use skills.</p>
+            <p><strong>Why it matters:</strong> this is the first place Claude should orient itself. It holds the always-on rules that apply almost every session.</p>
+          </div>
+          <div class="file-card">
+            <h3>PROJECT_BRIEF.md</h3>
+            <p><strong>Purpose:</strong> explains what the project is and why it exists.</p>
+            <p><strong>Contains:</strong> overview, problem statement, goals, non-goals, success criteria, constraints.</p>
+            <p><strong>Why it matters:</strong> stops Claude from drifting away from the real business purpose.</p>
+          </div>
+          <div class="file-card">
+            <h3>PRODUCT_REQUIREMENTS.md</h3>
+            <p><strong>Purpose:</strong> defines what the product needs to do.</p>
+            <p><strong>Contains:</strong> user stories, functional requirements, nice-to-haves, out-of-scope notes.</p>
+            <p><strong>Why it matters:</strong> keeps feature work tied to real requirements rather than impulse coding.</p>
+          </div>
+          <div class="file-card">
+            <h3>TECHNICAL_SPEC.md</h3>
+            <p><strong>Purpose:</strong> explains how the project should be built.</p>
+            <p><strong>Contains:</strong> architecture, stack, major components, data model, key flows, dependencies.</p>
+            <p><strong>Why it matters:</strong> gives Claude a target architecture so it does not invent one every few prompts.</p>
+          </div>
+          <div class="file-card">
+            <h3>TASKS.md</h3>
+            <p><strong>Purpose:</strong> the practical task list for current work.</p>
+            <p><strong>Contains:</strong> backlog, current tasks, next tasks, done items.</p>
+            <p><strong>Why it matters:</strong> helps keep work chunked and prevents Claude from trying to solve the whole universe in one go.</p>
+          </div>
+          <div class="file-card">
+            <h3>DECISION_LOG.md</h3>
+            <p><strong>Purpose:</strong> records important choices and their rationale.</p>
+            <p><strong>Contains:</strong> decision, context, options considered, rationale, consequences.</p>
+            <p><strong>Why it matters:</strong> stops the project from forgetting why key decisions were made.</p>
+          </div>
+          <div class="file-card">
+            <h3>SESSION_LOG.md</h3>
+            <p><strong>Purpose:</strong> a running history of recent work.</p>
+            <p><strong>Contains:</strong> session summary, what changed, what is next.</p>
+            <p><strong>Why it matters:</strong> improves continuity between Claude sessions and human review.</p>
+          </div>
+          <div class="file-card">
+            <h3>RISKS_ASSUMPTIONS_DEPENDENCIES.md</h3>
+            <p><strong>Purpose:</strong> captures uncertainty and external constraints.</p>
+            <p><strong>Contains:</strong> risks, assumptions, dependencies, unresolved questions.</p>
+            <p><strong>Why it matters:</strong> keeps uncertainty visible instead of letting it hide under confident-looking output.</p>
+          </div>
+          <div class="file-card">
+            <h3>PROJECT_STAGE.md</h3>
+            <p><strong>Purpose:</strong> says where the project currently sits in its lifecycle.</p>
+            <p><strong>Contains:</strong> current stage, completed stages, next stage, stage goals, exit criteria.</p>
+            <p><strong>Why it matters:</strong> helps Claude understand whether the job is discovery, scaffolding, build, polish, testing, or handover.</p>
+          </div>
+          <div class="file-card">
+            <h3>PROJECT_START_PROMPT.md</h3>
+            <p><strong>Purpose:</strong> a copy-ready session opener for Claude.</p>
+            <p><strong>Contains:</strong> instructions to read the right docs first, understand the current state, and work in controlled chunks.</p>
+            <p><strong>Why it matters:</strong> gives a reliable start point without rewriting the same prompt every time.</p>
+          </div>
+          <div class="file-card">
+            <h3>README.md</h3>
+            <p><strong>Purpose:</strong> a normal project entry point for humans and tools.</p>
+            <p><strong>Contains:</strong> high-level summary, setup notes, repo basics.</p>
+            <p><strong>Why it matters:</strong> keeps the repo understandable beyond Claude-specific context.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="skills">
+      <div class="container">
+        <div class="section-header">
+          <h2>The Claude skills that get created</h2>
+          <p>
+            Project Track deliberately keeps the skill set small. The rule is simple: put always-on rules in <code>CLAUDE.md</code>, and use skills for reusable workflows or specialist checks that apply when relevant.
+          </p>
+        </div>
+        <div class="card-grid">
+          <div class="skill-card">
+            <h3>testing-discipline</h3>
+            <p><strong>Purpose:</strong> keeps testing honest.</p>
+            <p><strong>What it does:</strong> makes Claude separate build/type checks, manual testing, automated tests, and limitations.</p>
+            <p><strong>Why it is useful:</strong> it stops “it compiles” from being treated as “it is tested”.</p>
+          </div>
+          <div class="skill-card">
+            <h3>ui-readability</h3>
+            <p><strong>Purpose:</strong> improves readability and contrast.</p>
+            <p><strong>What it does:</strong> reminds Claude to check pills, badges, chips, small text, light mode, dark mode, and perceived contrast.</p>
+            <p><strong>Why it is useful:</strong> it prevents the UI becoming pretty but hard to read.</p>
+          </div>
+          <div class="skill-card">
+            <h3>feature-chunking</h3>
+            <p><strong>Purpose:</strong> breaks work into controlled chunks.</p>
+            <p><strong>What it does:</strong> makes Claude read the code first, identify unknowns, propose chunking, avoid over-refactoring, and report each chunk cleanly.</p>
+            <p><strong>Why it is useful:</strong> it reduces chaos and keeps human review realistic.</p>
+          </div>
+          <div class="skill-card">
+            <h3>codebase-audit</h3>
+            <p><strong>Purpose:</strong> runs structured project audits.</p>
+            <p><strong>What it does:</strong> makes Claude audit by category, list files reviewed, distinguish confirmed issues from likely ones, and score only after full review.</p>
+            <p><strong>Why it is useful:</strong> it makes audits more believable, less dramatic, and more useful as a roadmap.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="why-it-matters">
+      <div class="container">
+        <div class="section-header">
+          <h2>Why these files and skills are important</h2>
+          <p>
+            In practice, they are close to imperative if you want Claude to be consistently useful on a real project.
+          </p>
+        </div>
+        <div class="grid">
+          <div class="audit-card">
+            <h3>Without them, Claude has weak context</h3>
+            <p>Claude can still write code, but it is much more likely to guess architecture, forget constraints, invent scope, or work against the real purpose of the project.</p>
+          </div>
+          <div class="audit-card">
+            <h3>They reduce repeated prompting</h3>
+            <p>Instead of rewriting the same instructions every session, the project itself holds the working context and reusable workflows.</p>
+          </div>
+          <div class="audit-card">
+            <h3>They improve continuity</h3>
+            <p>New sessions work better when the project explains itself clearly. Decision logs, session logs, and stage files stop important context from evaporating.</p>
+          </div>
+          <div class="audit-card">
+            <h3>They make review more realistic</h3>
+            <p>Chunking, testing, and audit skills make Claude’s output more inspectable and less likely to hide behind vague confidence.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots">
+      <div class="container">
+        <div class="section-header">
+          <h2>Screenshots</h2>
+          <p>
+            A few views that show the direction of Project Track: project setup, Claude-ready structure, and the quality and audit workflow it is growing into.
+          </p>
+        </div>
+
+        <div class="card-grid">
+          <div class="screenshot-frame">
+            <img src="./images/project-track-dashboard.png" alt="Project Track dashboard view" />
+            <div class="screenshot-meta">
+              <h3>Dashboard</h3>
+              <p>Main project overview, quick actions, and the entry point for starting a new Claude-ready project.</p>
+            </div>
+          </div>
+
+          <div class="screenshot-frame">
+            <img src="./images/project-track-new-project.png" alt="New Project flow in Project Track" />
+            <div class="screenshot-meta">
+              <h3>New Project flow</h3>
+              <p>The setup flow that scaffolds the project and generates the Claude docs and skills in one run.</p>
+            </div>
+          </div>
+
+          <div class="screenshot-frame">
+            <img src="./images/project-track-project-view.png" alt="Project details view in Project Track" />
+            <div class="screenshot-meta">
+              <h3>Project view</h3>
+              <p>A working project view that can evolve into a home for audits, findings, tasks, and project quality history.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-to-use">
+      <div class="container">
+        <div class="section-header">
+          <h2>How to use Project Track well</h2>
+          <p>
+            Project Track works best when it is treated as the project’s setup and operating layer, not just a tracker.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <div class="feature">
+            <h3>1. Start every project through New Project</h3>
+            <p>That ensures the scaffold, docs, and skills all exist together from the beginning.</p>
+          </div>
+          <div class="feature">
+            <h3>2. Keep CLAUDE.md current</h3>
+            <p>If the project direction changes, update the standing context so Claude keeps working from the right assumptions.</p>
+          </div>
+          <div class="feature">
+            <h3>3. Use skills deliberately</h3>
+            <p>Do not make a new skill for every little preference. Keep the skill set lean and useful, and use it when the task clearly matches.</p>
+          </div>
+          <div class="feature">
+            <h3>4. Work in reviewed chunks</h3>
+            <p>That keeps risk down and makes it far easier to catch when Claude starts drifting or overreaching.</p>
+          </div>
+          <div class="feature">
+            <h3>5. Keep tasks and decisions visible</h3>
+            <p>Use TASKS.md and DECISION_LOG.md to stop the project losing track of what matters and why.</p>
+          </div>
+          <div class="feature">
+            <h3>6. Use audits as the next layer</h3>
+            <p>The future audits feature should let you store and compare audits, turn findings into tasks, and track project quality over time.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="links">
+      <div class="container">
+        <div class="section-header">
+          <h2>Get the project</h2>
+          <p>
+            Project Track is designed to be both a working app and a clear explanation of how to start AI-assisted projects properly.
+          </p>
+        </div>
+
+        <div class="cta-panel">
+          <div class="cta-main">
+            <span class="kicker">Project links</span>
+            <h3>Explore the repo and docs</h3>
+            <p>
+              The GitHub repo is the best place to see the app, the generated docs approach, and the direction toward audit storage and project-quality workflows.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="https://github.com/YOUR-USERNAME/projectTrack" target="_blank" rel="noreferrer">Open GitHub repo</a>
+              <a class="button button-secondary" href="./project-track-overview.docx">Download overview doc</a>
+            </div>
+          </div>
+
+          <div class="cta-side">
+            <h3>What to include in the repo/docs folder</h3>
+            <ul class="link-list">
+              <li><a href="https://github.com/YOUR-USERNAME/projectTrack" target="_blank" rel="noreferrer">Project Track repository</a></li>
+              <li><a href="./project-track-overview.docx">Overview document</a></li>
+              <li><a href="./images/project-track-dashboard.png">Screenshot assets</a></li>
+            </ul>
+            <p class="subtle">
+              Replace the placeholder GitHub URL and make sure the linked files actually exist in your <code>docs</code> folder.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-card">
+        <h2>Project Track, in one sentence</h2>
+        <p>
+          Project Track is a desktop app for starting AI-assisted software projects properly, giving Claude the right context from the start, and creating a project structure that is far easier to build, review, and improve over time.
+        </p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
