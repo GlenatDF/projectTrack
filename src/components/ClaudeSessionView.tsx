@@ -146,7 +146,7 @@ export function ClaudeSessionView({ projectId, projectName }: Props) {
           addLog('Session restored from DB');
         }
       })
-      .catch(() => {})
+      .catch((err: unknown) => { addLog(`Failed to load session: ${String(err)}`); })
       .finally(() => {
         if (!cancelled) {
           setCheckingSession(false);

@@ -247,6 +247,17 @@ export function GeneratePlanModal({ projectId, onClose, onImported }: Props) {
                 {result.preserved_task_count !== 1 ? 's' : ''} you previously marked were preserved.
               </p>
             )}
+            {result.warnings.length > 0 && (
+              <div className="flex gap-2 p-3 bg-amber-900/15 border border-amber-700/30 rounded-lg">
+                <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-amber-300 text-xs font-medium mb-1">Import warnings</p>
+                  {result.warnings.map((w, i) => (
+                    <p key={i} className="text-amber-500 text-xs">{w}</p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

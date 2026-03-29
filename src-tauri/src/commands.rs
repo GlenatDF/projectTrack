@@ -202,7 +202,11 @@ pub fn open_in_vscode(path: String) -> Result<(), String> {
         }
     }
 
-    // Fallback: CLI binaries (useful in tauri dev where PATH includes homebrew)
+    // Fallback: CLI binaries (useful in tauri dev where PATH includes homebrew).
+    // IMPORTANT: use .spawn() here (fire-and-forget), NOT .status().
+    // Editors are long-running processes; .status() would block until the editor closes.
+    // .spawn() returns Err only if the binary cannot be found/launched at all, which
+    // is exactly the signal we need to try the next candidate.
     let cli_candidates = [
         "code",
         "cursor",
@@ -213,7 +217,7 @@ pub fn open_in_vscode(path: String) -> Result<(), String> {
     ];
 
     for candidate in &cli_candidates {
-        if let Ok(_) = Command::new(candidate).arg(&path).spawn() {
+        if Command::new(candidate).arg(&path).spawn().is_ok() {
             return Ok(());
         }
     }
@@ -362,10 +366,10 @@ pub fn choose_folder_mac() -> Result<Option<String>, String> {
 /// Escape a filesystem path for embedding as a POSIX-shell single-quoted
 /// argument inside an AppleScript double-quoted string.
 ///
-/// Escaping order (matters):
-///   1. POSIX single-quote escape  — so the shell treats the path literally
-///   2. Backslash-double           — AppleScript: \ → \\
-///   3. Double-quote escape        — AppleScript: " → \"
+/// Escaping order (matters — AppleScript escapes must come before the POSIX step):
+///   1. Backslash-double    — AppleScript: \ → \\ (must be first, before any new \ are introduced)
+///   2. Double-quote escape — AppleScript: " → \"
+///   3. POSIX single-quote  — shell:       ' → '\'' (last, so the \ introduced above are not re-escaped)
 fn posix_shell_arg_for_applescript(path: &str) -> String {
     path.replace('\\', r"\\")   // 1. AppleScript: \ → \\ (must precede POSIX step)
         .replace('"', r#"\""#)  // 2. AppleScript: " → \"
@@ -772,7 +776,6 @@ pub fn import_plan_response(
 ) -> Result<ImportPlanResult, String> {
     let mut conn = db_conn!(state);
     db::import_plan(&mut conn, project_id, &prompt_sent, &raw_response)
-        .map_err(|e| e.to_string())
 }
 
 // ── Planning: Run prompt via Claude CLI ───────────────────────────────────────

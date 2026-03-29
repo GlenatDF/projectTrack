@@ -279,6 +279,7 @@ export interface ImportPlanResult {
   risks_imported: number;
   assumptions_imported: number;
   preserved_task_count: number;
+  warnings: string[];
 }
 
 export interface AssembledPrompt {

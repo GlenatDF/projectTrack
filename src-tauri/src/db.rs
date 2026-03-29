@@ -742,6 +742,8 @@ pub struct ImportPlanResult {
     pub risks_imported: usize,
     pub assumptions_imported: usize,
     pub preserved_task_count: i64,
+    /// Fields that were missing in the AI response and were filled with fallback values.
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -1356,57 +1358,66 @@ fn next_free_phase_number(conn: &Connection, project_id: i64, preferred: i64) ->
 /// Import a parsed AI plan response into the database.
 /// Preserves phases/tasks with `user_modified = 1`.
 /// Replaces all ai-generated non-user-modified phases/tasks and all ai-generated risks/assumptions.
+///
+/// Returns a summary including any warnings for fields that were missing in the AI response.
 pub fn import_plan(
     conn: &mut Connection,
     project_id: i64,
     prompt_sent: &str,
     raw_response: &str,
-) -> Result<ImportPlanResult> {
+) -> std::result::Result<ImportPlanResult, String> {
     let stripped = strip_code_fences(raw_response);
-    let json_val: Value = serde_json::from_str(&stripped).map_err(|e| {
-        rusqlite::Error::InvalidParameterName(format!("JSON parse failed: {}", e))
-    })?;
+    let json_val: Value = serde_json::from_str(&stripped)
+        .map_err(|e| format!("JSON parse failed: {e}"))?;
 
     let phases_arr = val_arr(&json_val, "phases");
     if phases_arr.is_empty() {
-        return Err(rusqlite::Error::InvalidParameterName(
-            "No phases found in AI response".to_string(),
-        ));
+        return Err("No phases found in AI response".to_string());
     }
     if phases_arr.len() > 20 {
-        return Err(rusqlite::Error::InvalidParameterName(
-            format!("Response contains {} phases — maximum is 20. Check you pasted the right content.", phases_arr.len()),
+        return Err(format!(
+            "Response contains {} phases — maximum is 20. Check you pasted the right content.",
+            phases_arr.len()
         ));
     }
     let risks_arr = val_arr(&json_val, "risks");
     let assumptions_arr = val_arr(&json_val, "assumptions");
 
-    let tx = conn.transaction()?;
+    let mut warnings: Vec<String> = Vec::new();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // Delete non-user-modified AI-generated records
     tx.execute(
         "DELETE FROM project_phases WHERE project_id = ?1 AND ai_generated = 1 AND user_modified = 0",
         params![project_id],
-    )?;
+    ).map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM project_tasks WHERE project_id = ?1 AND ai_generated = 1 AND user_modified = 0",
         params![project_id],
-    )?;
+    ).map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM project_risks WHERE project_id = ?1 AND ai_generated = 1",
         params![project_id],
-    )?;
+    ).map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM project_assumptions WHERE project_id = ?1 AND ai_generated = 1",
         params![project_id],
-    )?;
+    ).map_err(|e| e.to_string())?;
 
     let mut tasks_imported = 0usize;
     for (idx, phase_val) in phases_arr.iter().enumerate() {
         let preferred_num = val_i64(phase_val, "phase_number").unwrap_or((idx as i64) + 1);
         let phase_number = next_free_phase_number(&tx, project_id, preferred_num);
-        let name = val_str(phase_val, "name")
-            .unwrap_or_else(|| format!("Phase {}", phase_number));
+        let name = match val_str(phase_val, "name") {
+            Some(n) => n,
+            None => {
+                let fallback = format!("Phase {phase_number}");
+                warnings.push(format!(
+                    "Phase {phase_number}: name field missing in AI response, used \"{fallback}\""
+                ));
+                fallback
+            }
+        };
         let description = val_str(phase_val, "description").unwrap_or_default();
         let goals_vec = val_arr(phase_val, "goals");
         let goals_json =
@@ -1419,12 +1430,21 @@ pub fn import_plan(
                  (project_id, phase_number, name, description, goals, estimated_duration, ai_generated)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
             params![project_id, phase_number, name, description, goals_json, estimated_duration],
-        )?;
+        ).map_err(|e| e.to_string())?;
         let phase_id = tx.last_insert_rowid();
 
         for (task_idx, task_val) in val_arr(phase_val, "tasks").iter().enumerate() {
-            let title = val_str(task_val, "title")
-                .unwrap_or_else(|| format!("Task {}", task_idx + 1));
+            let title = match val_str(task_val, "title") {
+                Some(t) => t,
+                None => {
+                    let fallback = format!("Task {}", task_idx + 1);
+                    warnings.push(format!(
+                        "Phase {phase_number}, task {}: title missing, used \"{fallback}\"",
+                        task_idx + 1
+                    ));
+                    fallback
+                }
+            };
             let desc = val_str(task_val, "description").unwrap_or_default();
             let category =
                 normalise_category(&val_str(task_val, "category").unwrap_or_default());
@@ -1437,13 +1457,19 @@ pub fn import_plan(
                      (project_id, phase_id, title, description, category, effort_estimate, sort_order, ai_generated)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
                 params![project_id, phase_id, title, desc, category, effort, sort_order],
-            )?;
+            ).map_err(|e| e.to_string())?;
             tasks_imported += 1;
         }
     }
 
     for risk_val in risks_arr.iter() {
-        let title = val_str(risk_val, "title").unwrap_or_else(|| "Untitled Risk".to_string());
+        let title = match val_str(risk_val, "title") {
+            Some(t) => t,
+            None => {
+                warnings.push("A risk entry is missing its title field".to_string());
+                "Untitled Risk".to_string()
+            }
+        };
         let desc = val_str(risk_val, "description").unwrap_or_default();
         let likelihood =
             normalise_level(&val_str(risk_val, "likelihood").unwrap_or_default());
@@ -1454,12 +1480,17 @@ pub fn import_plan(
                  (project_id, title, description, likelihood, impact, mitigation, ai_generated)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
             params![project_id, title, desc, likelihood, impact, mitigation],
-        )?;
+        ).map_err(|e| e.to_string())?;
     }
 
     for assumption_val in assumptions_arr.iter() {
-        let title = val_str(assumption_val, "title")
-            .unwrap_or_else(|| "Untitled Assumption".to_string());
+        let title = match val_str(assumption_val, "title") {
+            Some(t) => t,
+            None => {
+                warnings.push("An assumption entry is missing its title field".to_string());
+                "Untitled Assumption".to_string()
+            }
+        };
         let desc = val_str(assumption_val, "description").unwrap_or_default();
         let category = normalise_assumption_category(
             &val_str(assumption_val, "category").unwrap_or_default(),
@@ -1469,14 +1500,14 @@ pub fn import_plan(
                  (project_id, title, description, category, ai_generated)
              VALUES (?1, ?2, ?3, ?4, 1)",
             params![project_id, title, desc, category],
-        )?;
+        ).map_err(|e| e.to_string())?;
     }
 
     let preserved_task_count: i64 = tx.query_row(
         "SELECT COUNT(*) FROM project_tasks WHERE project_id = ?1 AND user_modified = 1",
         params![project_id],
         |r| r.get(0),
-    )?;
+    ).map_err(|e| e.to_string())?;
 
     tx.execute(
         "INSERT INTO ai_plan_runs
@@ -1491,9 +1522,9 @@ pub fn import_plan(
             tasks_imported as i64,
             risks_arr.len() as i64,
         ],
-    )?;
+    ).map_err(|e| e.to_string())?;
 
-    tx.commit()?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(ImportPlanResult {
         phases_imported: phases_arr.len(),
@@ -1501,6 +1532,7 @@ pub fn import_plan(
         risks_imported: risks_arr.len(),
         assumptions_imported: assumptions_arr.len(),
         preserved_task_count,
+        warnings,
     })
 }
 
