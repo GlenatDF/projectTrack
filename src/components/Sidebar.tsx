@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { FolderKanban, FolderSearch, Settings, Loader2, BookOpen } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import type { AutoScanState } from './Layout';
 
 const navItems = [
@@ -10,6 +12,9 @@ const navItems = [
 ];
 
 export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {
+  const [version, setVersion] = useState('');
+  useEffect(() => { getVersion().then(setVersion).catch(() => {}); }, []);
+
   return (
     <aside className="w-52 shrink-0 bg-surface border-r border-border flex flex-col h-full">
       {/* App identity */}
@@ -55,7 +60,7 @@ export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {
         ) : autoScanState === 'done' ? (
           <span className="text-xs text-green-500">✓ Scanned</span>
         ) : (
-          <span className="text-[11px] text-slate-600">v0.1.0</span>
+          <span className="text-[11px] text-slate-600">{version ? `v${version}` : ''}</span>
         )}
         <span className="text-[11px] text-slate-700">local</span>
       </div>

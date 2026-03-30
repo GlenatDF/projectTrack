@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Upload, AlertCircle, CheckCircle2, Loader2, Eye, EyeOff } from 'lucide-react';
-import { exportProjects, importProjects, getSettings, updateSetting, checkGhCli } from '../lib/api';
+import { getVersion } from '@tauri-apps/api/app';
+import { exportProjects, importProjects, getSettings, updateSetting, checkGhCli, publishCurrentVersion, openFolder } from '../lib/api';
 import { downloadJson, readJsonFile } from '../lib/utils';
 import { useTheme, ZOOM_LEVELS, type Theme, type ZoomLevel } from '../lib/ThemeContext';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -13,6 +14,9 @@ export default function Settings() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const [appVersion, setAppVersion] = useState('');
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
 
   // Integration settings
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -180,6 +184,61 @@ export default function Settings() {
             />
           </div>
 
+          {/* Updates */}
+          <UpdatesCard
+            folderPath={settings.update_folder_path ?? ''}
+            onSavePath={(v) => saveSetting('update_folder_path', v)}
+            savingPath={savingKey === 'update_folder_path'}
+          />
+
+          {/* Prompt Templates */}
+          <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+            <div>
+              <SectionLabel>Prompt Templates</SectionLabel>
+              <p className="text-xs text-slate-600 mt-1">
+                Shown as copyable cards in the Session tab on every project.
+              </p>
+            </div>
+
+            <PromptField
+              label="Initial kickoff prompt"
+              hint="For the very first session on a new or unfamiliar project."
+              value={settings.prompt_initial ?? ''}
+              onSave={(v) => saveSetting('prompt_initial', v)}
+              saving={savingKey === 'prompt_initial'}
+            />
+
+            <PromptField
+              label="New session / continuing prompt"
+              hint="Orientation pass — orient, review recent work, propose next steps."
+              value={settings.prompt_continuing ?? ''}
+              onSave={(v) => saveSetting('prompt_continuing', v)}
+              saving={savingKey === 'prompt_continuing'}
+            />
+          </div>
+
+          {/* CLAUDE.md Template */}
+          <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+            <div>
+              <SectionLabel>CLAUDE.md Template</SectionLabel>
+              <p className="text-xs text-slate-600 mt-1">
+                Written as <code className="text-slate-400">CLAUDE.md</code> when scaffolding a new project.
+                Leave empty to use the auto-generated version.
+                Use <code className="text-slate-400">{'{{project_name}}'}</code> and{' '}
+                <code className="text-slate-400">{'{{project_description}}'}</code> as placeholders.
+              </p>
+            </div>
+
+            <PromptField
+              label="Template content"
+              hint=""
+              value={settings.claude_md_template ?? ''}
+              onSave={(v) => saveSetting('claude_md_template', v)}
+              saving={savingKey === 'claude_md_template'}
+              rows={16}
+            />
+          </div>
+
           {msg && (
             <div className={`p-3 rounded-lg border text-xs flex items-start gap-2 ${
               msg.type === 'ok'
@@ -218,7 +277,7 @@ export default function Settings() {
             <SectionLabel>About</SectionLabel>
             <div className="space-y-0">
               <Row label="App" value="Launchpad" />
-              <Row label="Version" value="0.1.0" />
+              <Row label="Version" value={appVersion || '…'} />
               <Row label="Storage" value="~/Library/Application Support/com.glen.launchpad/" />
               <Row label="Backend" value="Rust + SQLite (local-only)" />
             </div>
@@ -262,6 +321,133 @@ function SettingField({
           placeholder={placeholder}
           className="flex-1 bg-base border border-border rounded-md px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 outline-none focus:border-violet-500/50 font-mono"
         />
+        <Button
+          variant="secondary" size="sm"
+          onClick={() => onSave(local)}
+          disabled={!dirty || saving}
+        >
+          {saving ? <Loader2 size={11} className="animate-spin" /> : 'Save'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function UpdatesCard({
+  folderPath, onSavePath, savingPath,
+}: {
+  folderPath: string;
+  onSavePath: (v: string) => void;
+  savingPath: boolean;
+}) {
+  const [appVersion, setAppVersion]     = useState('');
+  const [publishNotes, setPublishNotes] = useState('');
+  const [publishing, setPublishing]     = useState(false);
+  const [publishMsg, setPublishMsg]     = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
+
+  async function handlePublish() {
+    setPublishing(true);
+    setPublishMsg(null);
+    try {
+      const path = await publishCurrentVersion(publishNotes);
+      setPublishMsg({ ok: true, text: `Written to ${path}` });
+      setPublishNotes('');
+    } catch (e) {
+      setPublishMsg({ ok: false, text: String(e) });
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+      <div>
+        <SectionLabel>Updates</SectionLabel>
+        <p className="text-xs text-slate-600 mt-1">
+          Point to a shared folder (e.g. Dropbox). Drop the DMG there and publish a{' '}
+          <code className="text-slate-400">version.json</code> — the app checks on launch
+          and shows a banner when a newer version is available.
+        </p>
+      </div>
+
+      <SettingField
+        label="Shared folder path"
+        hint="The folder where you drop the DMG and version.json"
+        value={folderPath}
+        placeholder="~/Dropbox/Team/Launchpad"
+        onSave={onSavePath}
+        saving={savingPath}
+      />
+
+      {folderPath && (
+        <div className="space-y-2 pt-1 border-t border-border-subtle">
+          <label className="block text-xs text-slate-400">
+            Publish current version{appVersion ? ` (${appVersion})` : ''}
+          </label>
+          <p className="text-xs text-slate-600">
+            Writes <code className="text-slate-400">version.json</code> to the folder above,
+            telling others a new build is available. Do this after dropping in a new DMG.
+          </p>
+          <textarea
+            value={publishNotes}
+            onChange={(e) => setPublishNotes(e.target.value)}
+            rows={2}
+            placeholder="Release notes (optional) — e.g. Added prompt templates, fixed scaffold bug"
+            className="w-full bg-base border border-border rounded-md px-3 py-2 text-xs text-slate-300 placeholder-slate-600 outline-none focus:border-violet-500/50 resize-none"
+          />
+          <div className="flex items-center gap-3">
+            <Button variant="primary" size="sm" onClick={handlePublish} disabled={publishing || !folderPath}>
+              {publishing ? <Loader2 size={11} className="animate-spin" /> : null}
+              Publish version {appVersion}
+            </Button>
+            {folderPath && (
+              <button
+                onClick={() => openFolder(folderPath).catch(() => {})}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors cursor-default"
+              >
+                Open folder
+              </button>
+            )}
+          </div>
+          {publishMsg && (
+            <div className={`flex items-start gap-1.5 text-xs ${publishMsg.ok ? 'text-green-400' : 'text-red-400'}`}>
+              {publishMsg.ok
+                ? <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
+                : <AlertCircle  size={12} className="mt-0.5 shrink-0" />}
+              {publishMsg.text}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PromptField({
+  label, hint, value, onSave, saving, rows = 8,
+}: {
+  label: string; hint?: string; value: string;
+  onSave: (v: string) => void; saving: boolean; rows?: number;
+}) {
+  const [local, setLocal] = useState(value);
+  const dirty = local !== value;
+
+  useEffect(() => { setLocal(value); }, [value]);
+
+  return (
+    <div>
+      <label className="block text-xs text-slate-400 mb-1">{label}</label>
+      {hint && <p className="text-xs text-slate-600 mb-1">{hint}</p>}
+      <textarea
+        value={local}
+        onChange={(e) => setLocal(e.target.value)}
+        rows={rows}
+        className="w-full bg-base border border-border rounded-md px-3 py-2 text-xs text-slate-300 placeholder-slate-600 outline-none focus:border-violet-500/50 resize-y font-mono leading-relaxed"
+        spellCheck={false}
+      />
+      <div className="mt-1.5">
         <Button
           variant="secondary" size="sm"
           onClick={() => onSave(local)}
