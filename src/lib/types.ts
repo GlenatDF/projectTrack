@@ -342,6 +342,17 @@ export interface AppSettings {
   vercel_token?: string;
   supabase_access_token?: string;
   supabase_org_id?: string;
+  prompt_initial?: string;
+  prompt_continuing?: string;
+  claude_md_template?: string;
+  update_folder_path?: string;
+}
+
+export interface UpdateInfo {
+  version: string;
+  released: string;
+  notes: string | null;
+  folder_path: string;
 }
 
 // ── Planning display helpers ───────────────────────────────────────────────────
@@ -428,4 +439,12 @@ export interface AuditWithFindings {
 export interface AuditStoredResult {
   audit_id: number;
   findings_count: number;
+}
+
+// ── Skills library ─────────────────────────────────────────────────────────────
+
+export interface SkillEntry {
+  category: string;
+  name: string;
+  path: string;
 }

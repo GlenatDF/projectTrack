@@ -27,11 +27,13 @@ import { relativeTime, shortHash } from '../lib/utils';
 import { computeHealth } from '../lib/health';
 import { ClaudeSessionView } from '../components/ClaudeSessionView';
 import { AuditsView } from '../components/audits/AuditsView';
+import { SkillsView } from '../components/SkillsView';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'session',  label: 'Session' },
   { key: 'audits',   label: 'Audits' },
+  { key: 'skills',   label: 'Skills' },
 ] as const;
 
 type Tab = typeof TABS[number]['key'];
@@ -352,6 +354,11 @@ export default function ProjectDetail() {
           <div className={activeTab === 'audits' ? 'block' : 'hidden'}>
             {visitedTabs.has('audits') && (
               <AuditsView projectId={projectId} />
+            )}
+          </div>
+          <div className={activeTab === 'skills' ? 'block' : 'hidden'}>
+            {visitedTabs.has('skills') && (
+              <SkillsView project={project} />
             )}
           </div>
 

@@ -1099,11 +1099,88 @@ Return ONLY valid JSON — no preamble, no explanation, no markdown code fences.
 
 Generate 3-6 phases with 3-8 tasks each. Include 3-8 risks and 3-6 assumptions. Focus on concrete, actionable tasks."#;
 
+const SEED_PROMPT_INITIAL: &str = "You are helping me kick off this project.
+
+Before writing any code, do a project kickoff pass.
+
+1. Read the project foundations
+- Read CLAUDE.md (it is auto-loaded at session start, but confirm you have it)
+- Read README.md
+- Check docs/, .claude/, or any planning/notes files
+
+2. Understand what we are building
+- Summarise the goal in 2-3 sentences
+- Note the tech stack and any hard constraints
+- Flag anything unclear or missing from the docs
+
+3. Propose the first chunk of work
+- What is the smallest valuable first step?
+- List 2-3 options with a clear recommendation
+
+Rules:
+- Do NOT write any code yet
+- Ask about anything ambiguous before proposing
+- Keep scope tight — one chunk at a time
+
+At the end, give me:
+1. What we are building (2-3 sentences)
+2. Stack and constraints
+3. Recommended first chunk
+
+Then wait for my instruction.";
+
+const SEED_PROMPT_CONTINUING: &str = "You are helping me continue work on this project.
+
+Before touching any code, do an orientation pass only.
+
+1. Inspect the repo structure
+- look at the main directories
+- identify the key app/code folders
+- note important config files
+
+2. Check repository state
+- run `git status`
+- review recent commits with `git log --oneline -10`
+
+3. Read the important project guidance
+- `README.md`
+- `CLAUDE.md` (auto-loaded at session start — but confirm you have read it)
+- task lists, notes, plans, audit docs, or other guidance files if they exist
+- check `.claude/skills/` if it exists — note available skills and what they cover
+
+4. Summarize the current state
+Give me a concise summary of:
+- what this project appears to be
+- what has been worked on recently
+- the current likely focus
+- any obvious risks, blockers, or open questions
+
+5. Propose the next steps
+- suggest the most likely next 3 steps
+- say which one you recommend first
+- do not implement yet
+
+Important rules:
+- Do NOT modify any files yet
+- Do NOT start coding yet
+- Do NOT make assumptions silently
+- If something is unclear, say so
+- Keep the summary concise but useful
+- Treat this as an orientation pass only
+
+At the end, give me:
+1. Repo summary
+2. Recent work
+3. Recommended next steps
+4. Any questions or uncertainties
+Then wait for my instruction.";
+
 // ── Planning: Seed functions ───────────────────────────────────────────────────
 
 pub fn seed_defaults(conn: &Connection) -> Result<()> {
     seed_methodology_blocks(conn)?;
     seed_prompt_template(conn)?;
+    seed_session_prompts(conn)?;
     Ok(())
 }
 
@@ -1131,6 +1208,20 @@ fn seed_prompt_template(conn: &Connection) -> Result<()> {
          VALUES ('project_planning_v1', 'Project Planning v1', '', ?1, 'json', 'claude-sonnet-4-6')",
         params![SEED_PLANNING_PROMPT],
     )?;
+    Ok(())
+}
+
+fn seed_session_prompts(conn: &Connection) -> Result<()> {
+    let items: &[(&str, &str)] = &[
+        ("prompt_initial",    SEED_PROMPT_INITIAL),
+        ("prompt_continuing", SEED_PROMPT_CONTINUING),
+    ];
+    for (key, value) in items {
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+    }
     Ok(())
 }
 

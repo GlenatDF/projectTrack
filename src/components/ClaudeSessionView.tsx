@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import {
   getOpenerPrompt,
+  getSettings,
   resetClaudeSession,
   runClaudeHere,
   updateSessionNotes,
@@ -19,13 +20,22 @@ interface Props {
 }
 
 export function ClaudeSessionView({ project }: Props) {
-  const [opener, setOpener]           = useState<string | null>(null);
-  const [loading, setLoading]         = useState(true);
-  const [copied, setCopied]           = useState(false);
-  const [notes, setNotes]             = useState(project.session_handoff_notes ?? '');
-  const [notesSaved, setNotesSaved]   = useState(false);
-  const [launching, setLaunching]     = useState(false);
-  const [launchError, setLaunchError] = useState('');
+  const [opener, setOpener]               = useState<string | null>(null);
+  const [loading, setLoading]             = useState(true);
+  const [copied, setCopied]               = useState(false);
+  const [notes, setNotes]                 = useState(project.session_handoff_notes ?? '');
+  const [notesSaved, setNotesSaved]       = useState(false);
+  const [launching, setLaunching]         = useState(false);
+  const [launchError, setLaunchError]     = useState('');
+  const [promptInitial, setPromptInitial]         = useState('');
+  const [promptContinuing, setPromptContinuing]   = useState('');
+
+  useEffect(() => {
+    getSettings().then(s => {
+      setPromptInitial(s.prompt_initial ?? '');
+      setPromptContinuing(s.prompt_continuing ?? '');
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -83,6 +93,32 @@ export function ClaudeSessionView({ project }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
+
+      {/* Prompt templates */}
+      {(promptInitial || promptContinuing) && (
+        <div className="space-y-2">
+          <span className="text-[11px] text-slate-500 uppercase tracking-widest font-semibold block">
+            Prompt templates
+          </span>
+          <p className="text-xs text-slate-600">Click a card to copy the prompt to your clipboard.</p>
+          <div className="space-y-2">
+            {promptInitial && (
+              <PromptCard
+                label="Initial kickoff"
+                description="For the very first session on a new or unfamiliar project."
+                prompt={promptInitial}
+              />
+            )}
+            {promptContinuing && (
+              <PromptCard
+                label="New session / continue"
+                description="Orientation pass — orient, review recent work, propose next steps."
+                prompt={promptContinuing}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -197,5 +233,33 @@ export function ClaudeSessionView({ project }: Props) {
       </div>
 
     </div>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function PromptCard({ label, description, prompt }: { label: string; description: string; prompt: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(prompt).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="w-full text-left bg-base border border-border rounded-lg px-4 py-3 hover:border-violet-500/40 transition-colors cursor-default"
+    >
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-xs font-medium text-slate-200">{label}</span>
+        {copied
+          ? <span className="text-[11px] text-green-400 shrink-0">Copied ✓</span>
+          : <ClipboardCopy size={12} className="text-slate-600 shrink-0" />
+        }
+      </div>
+      <p className="text-[11px] text-slate-500 mt-0.5">{description}</p>
+    </button>
   );
 }

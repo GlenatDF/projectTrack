@@ -171,6 +171,12 @@ Rules:
 - Avoid duplicating the same instruction in both CLAUDE.md and a skill
 - A good skill has a clear "when to use it" condition and a specific procedure
 
+
+### Skills in this project
+
+| Skill | When to use it |
+|-------|----------------|
+| `focused-fix` | Use when the user asks to fix, debug, or make a specific feature/module/area work end-to-end. Triggers: 'make X work', 'fix the Y feature', 'the Z module is broken', 'focus on [area]'. Not for quick single-bug fixes — this is for systematic deep-dive repair across all files and dependencies. |
 ## Skills in this repo
 
 | Skill | When to use it |

@@ -24,6 +24,8 @@ import type {
   ProjectTask,
   ScaffoldResult,
   SessionTurn,
+  SkillEntry,
+  UpdateInfo,
 } from './types';
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -295,3 +297,29 @@ export const updateFindingStatus = (
 
 export const createTaskFromFinding = (findingId: number, projectId: number): Promise<number> =>
   invoke('create_task_from_finding', { findingId, projectId });
+
+export const checkForUpdate = (): Promise<UpdateInfo | null> =>
+  invoke('check_for_update');
+
+export const publishCurrentVersion = (notes: string): Promise<string> =>
+  invoke('publish_current_version', { notes });
+
+// ── Skills library ─────────────────────────────────────────────────────────────
+
+export const fetchSkillsIndex = (): Promise<SkillEntry[]> =>
+  invoke('fetch_skills_index');
+
+export const fetchSkillContent = (path: string): Promise<string> =>
+  invoke('fetch_skill_content', { path });
+
+export const getInstalledSkills = (projectId: number): Promise<string[]> =>
+  invoke('get_installed_skills', { projectId });
+
+export const installSkill = (
+  projectId: number,
+  skillName: string,
+  category: string,
+  content: string,
+  description: string,
+): Promise<void> =>
+  invoke('install_skill', { projectId, skillName, category, content, description });

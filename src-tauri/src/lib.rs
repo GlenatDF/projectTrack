@@ -134,6 +134,14 @@ pub fn run() {
             commands::get_audit_detail,
             commands::update_finding_status,
             commands::create_task_from_finding,
+            // Skills library
+            commands::fetch_skills_index,
+            commands::fetch_skill_content,
+            commands::get_installed_skills,
+            commands::install_skill,
+            // Update check
+            commands::check_for_update,
+            commands::publish_current_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

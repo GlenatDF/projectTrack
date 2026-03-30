@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   Globe, Monitor, Wrench, Zap, BookOpen,
   LayoutTemplate, Package, Layers, FileText, BookMarked,
   Loader2, CheckCircle2, XCircle, Circle,
   Hammer, FolderOpen, Github, Triangle, Database, AlertCircle,
-  MinusCircle, ExternalLink, Copy,
+  MinusCircle, ExternalLink, Copy, Settings,
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { Modal } from './ui/Modal';
@@ -120,6 +121,8 @@ interface Props {
 }
 
 export function NewProjectWizard({ open, onClose, onCreated }: Props) {
+  const navigate = useNavigate();
+
   // Mode
   const [mode, setMode] = useState<Mode>('choose');
 
@@ -171,6 +174,12 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
     if (phase === 'running') return;
     reset();
     onClose();
+  }
+
+  function handleGoToSettings() {
+    reset();
+    onClose();
+    navigate('/settings');
   }
 
   function patch(partial: Partial<NewProjectConfig>) {
@@ -304,11 +313,17 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
   } else if (phase === 'form') {
     const steps = mode === 'scratch' ? SCRATCH_STEPS : TRACK_STEPS;
     const isLast = formStep === steps.length - 1;
+    const scratchBlocked = mode === 'scratch' && isLast && !projectsDir;
     footer = (
       <div className="flex items-center justify-between w-full">
         <Button variant="ghost" size="sm" onClick={handleBack}>← Back</Button>
         {isLast
-          ? <Button variant="primary" size="sm" onClick={mode === 'scratch' ? handleCreateScratch : handleCreateTrack}>
+          ? <Button
+              variant="primary" size="sm"
+              onClick={mode === 'scratch' ? handleCreateScratch : handleCreateTrack}
+              disabled={scratchBlocked}
+              title={scratchBlocked ? 'Set a default projects directory in Settings first' : undefined}
+            >
               {mode === 'scratch' ? 'Scaffold & create' : 'Create project'}
             </Button>
           : <Button variant="primary" size="sm" onClick={handleNext}>Next →</Button>
@@ -399,6 +414,7 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
               scaffoldVercel={scaffoldVercel} setScaffoldVercel={setScaffoldVercel}
               scaffoldSupabase={scaffoldSupabase} setScaffoldSupabase={setScaffoldSupabase}
               config={config} patch={patch}
+              onGoToSettings={handleGoToSettings}
             />
           )}
         </>
@@ -648,7 +664,7 @@ function StepCloud({
   scaffoldGithub, setScaffoldGithub,
   scaffoldVercel, setScaffoldVercel,
   scaffoldSupabase, setScaffoldSupabase,
-  config, patch,
+  config, patch, onGoToSettings,
 }: {
   projectsDir: string;
   ghAvailable: boolean | null;
@@ -659,17 +675,31 @@ function StepCloud({
   scaffoldSupabase: boolean; setScaffoldSupabase: (v: boolean) => void;
   config: NewProjectConfig;
   patch: (p: Partial<NewProjectConfig>) => void;
+  onGoToSettings: () => void;
 }) {
+  const missingCloud: string[] = [];
+  if (ghAvailable === false) missingCloud.push('GitHub (gh CLI not found or not authenticated)');
+  if (!vercelToken)           missingCloud.push('Vercel (no access token)');
+  if (!supabaseReady)         missingCloud.push('Supabase (token or org ID missing)');
+
   return (
     <div className="space-y-4">
       {/* Projects directory status */}
       {!projectsDir ? (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
           <AlertCircle size={13} className="text-yellow-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-yellow-300">
-            No default projects directory configured.
-            Go to <span className="font-medium">Settings → Integrations</span> to set one before scaffolding.
-          </p>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-yellow-300 font-medium">No projects directory set</p>
+            <p className="text-xs text-yellow-400/70 mt-0.5">
+              Required before scaffolding. Set a default directory in Settings.
+            </p>
+          </div>
+          <button
+            onClick={onGoToSettings}
+            className="shrink-0 flex items-center gap-1 text-xs text-yellow-300 hover:text-yellow-100 transition-colors cursor-default"
+          >
+            <Settings size={11} /> Settings
+          </button>
         </div>
       ) : (
         <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -698,7 +728,7 @@ function StepCloud({
             label="Create GitHub repo"
             description={
               ghAvailable === null ? 'checking gh CLI…' :
-              ghAvailable ? 'gh CLI ready' : 'gh CLI not found — run gh auth login'
+              ghAvailable ? 'gh CLI ready' : 'gh CLI not found or not authenticated'
             }
             available={ghAvailable ?? false}
             checked={scaffoldGithub}
@@ -707,7 +737,7 @@ function StepCloud({
           <CloudOption
             icon={<Triangle size={13} />}
             label="Create Vercel project"
-            description={vercelToken ? 'token configured' : 'no token — set in Settings'}
+            description={vercelToken ? 'token configured' : 'no access token'}
             available={!!vercelToken}
             checked={scaffoldVercel}
             onChange={setScaffoldVercel}
@@ -715,7 +745,7 @@ function StepCloud({
           <CloudOption
             icon={<Database size={13} />}
             label="Create Supabase project"
-            description={supabaseReady ? 'token + org ID configured' : 'token/org missing — set in Settings'}
+            description={supabaseReady ? 'token + org ID configured' : 'token or org ID missing'}
             available={supabaseReady}
             checked={scaffoldSupabase}
             onChange={setScaffoldSupabase}
@@ -723,8 +753,29 @@ function StepCloud({
         </div>
       </div>
 
+      {/* Missing cloud settings callout */}
+      {missingCloud.length > 0 && (
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-surface border border-border-subtle">
+          <AlertCircle size={13} className="text-slate-500 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-slate-400 mb-1.5">Not configured — will be skipped:</p>
+            <ul className="space-y-0.5">
+              {missingCloud.map((item) => (
+                <li key={item} className="text-[11px] text-slate-500">· {item}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            onClick={onGoToSettings}
+            className="shrink-0 flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors cursor-default"
+          >
+            <Settings size={11} /> Configure
+          </button>
+        </div>
+      )}
+
       <p className="text-[11px] text-slate-600 leading-relaxed">
-        Unchecked or unavailable services are skipped — you can set them up manually later.
+        Skipped services can be set up manually after the project is created.
       </p>
     </div>
   );

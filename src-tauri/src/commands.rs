@@ -1214,7 +1214,7 @@ pub fn scaffold_full_project(
     app: tauri::AppHandle,
 ) -> Result<FullScaffoldResult, String> {
     // Read settings (brief DB lock — released before long-running ops)
-    let (projects_dir, vercel_token, supabase_token, supabase_org_id) = {
+    let (projects_dir, vercel_token, supabase_token, supabase_org_id, claude_md_template) = {
         let conn = db_conn!(state);
         let projects_dir =
             db::get_setting(&conn, "projects_dir").map_err(|e| e.to_string())?;
@@ -1224,7 +1224,9 @@ pub fn scaffold_full_project(
             db::get_setting(&conn, "supabase_access_token").map_err(|e| e.to_string())?;
         let supabase_org_id =
             db::get_setting(&conn, "supabase_org_id").map_err(|e| e.to_string())?;
-        (projects_dir, vercel_token, supabase_token, supabase_org_id)
+        let claude_md_template = db::get_setting(&conn, "claude_md_template").ok()
+            .filter(|s| !s.trim().is_empty());
+        (projects_dir, vercel_token, supabase_token, supabase_org_id, claude_md_template)
     };
 
     if projects_dir.is_empty() {
@@ -1278,7 +1280,7 @@ pub fn scaffold_full_project(
         create_git_repo:      false,
         create_claude_skills,
     };
-    let doc_files = project_init::write_docs_and_skills(&project_dir, &init_req, &app)?;
+    let doc_files = project_init::write_docs_and_skills(&project_dir, &init_req, &app, claude_md_template)?;
     files_created.extend(doc_files);
 
     // 3. Git init — commits scaffold files + docs + skills together
@@ -1518,4 +1520,515 @@ pub fn create_task_from_finding(
 ) -> Result<i64, String> {
     let mut conn = db_conn!(state);
     db::create_task_from_finding(&mut conn, finding_id, project_id)
+}
+
+// ── Update check ───────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct UpdateInfo {
+    pub version:     String,
+    pub released:    String,
+    pub notes:       Option<String>,
+    pub folder_path: String,
+}
+
+/// Parse a semver string "x.y.z" into a comparable tuple.
+fn parse_semver(v: &str) -> (u32, u32, u32) {
+    let mut parts = v.split('.');
+    let major = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let minor = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let patch = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    (major, minor, patch)
+}
+
+/// Read version.json from the configured update folder and return info if a
+/// newer version is available. Returns null if no folder is configured, the
+/// file doesn't exist, or the current version is already up to date.
+#[tauri::command]
+pub fn check_for_update(state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
+    let folder = {
+        let conn = db_conn!(state);
+        db::get_setting(&conn, "update_folder_path").unwrap_or_default()
+    };
+
+    if folder.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let expanded = folder.replace('~', &std::env::var("HOME").unwrap_or_default());
+    let version_path = std::path::PathBuf::from(&expanded).join("version.json");
+
+    if !version_path.exists() {
+        return Ok(None);
+    }
+
+    let content = std::fs::read_to_string(&version_path).map_err(|e| e.to_string())?;
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid version.json: {e}"))?;
+
+    let remote_version = json["version"].as_str().unwrap_or("").to_string();
+    let released       = json["released"].as_str().unwrap_or("").to_string();
+    let notes          = json["notes"].as_str().map(|s| s.to_string());
+
+    if remote_version.is_empty() {
+        return Ok(None);
+    }
+
+    let current = env!("CARGO_PKG_VERSION");
+    if parse_semver(&remote_version) > parse_semver(current) {
+        Ok(Some(UpdateInfo { version: remote_version, released, notes, folder_path: expanded }))
+    } else {
+        Ok(None)
+    }
+}
+
+// ── Skills library ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct SkillEntry {
+    pub category: String,
+    pub name:     String,
+    pub path:     String,
+}
+
+const SKILL_CATEGORIES: &[&str] = &[
+    "business-growth",
+    "c-level-advisor",
+    "engineering",
+    "engineering-team",
+    "finance",
+    "marketing-skill",
+    "product-team",
+    "project-management",
+];
+
+/// Fetch the skills index from the alirezarezvani/claude-skills GitHub repo.
+/// Returns only entries whose category is in the whitelist.
+#[tauri::command]
+pub fn fetch_skills_index() -> Result<Vec<SkillEntry>, String> {
+    let resp = ureq::get(
+        "https://api.github.com/repos/alirezarezvani/claude-skills/git/trees/main?recursive=1",
+    )
+    .set("User-Agent", "Launchpad-App")
+    .call()
+    .map_err(|e| e.to_string())?;
+
+    let json: serde_json::Value = resp.into_json().map_err(|e| e.to_string())?;
+
+    let tree = json["tree"]
+        .as_array()
+        .ok_or_else(|| "No tree in response".to_string())?;
+
+    let mut skills = Vec::new();
+    for entry in tree {
+        if entry["type"].as_str() != Some("blob") {
+            continue;
+        }
+        let path = match entry["path"].as_str() {
+            Some(p) => p,
+            None => continue,
+        };
+        // Must match exactly {category}/{name}/SKILL.md
+        let parts: Vec<&str> = path.splitn(3, '/').collect();
+        if parts.len() != 3 || parts[2] != "SKILL.md" {
+            continue;
+        }
+        let category = parts[0];
+        let name = parts[1];
+        if !SKILL_CATEGORIES.contains(&category) {
+            continue;
+        }
+        skills.push(SkillEntry {
+            category: category.to_string(),
+            name:     name.to_string(),
+            path:     path.to_string(),
+        });
+    }
+
+    Ok(skills)
+}
+
+/// Fetch the raw SKILL.md content for a given path.
+#[tauri::command]
+pub fn fetch_skill_content(path: String) -> Result<String, String> {
+    let url = format!(
+        "https://raw.githubusercontent.com/alirezarezvani/claude-skills/main/{}",
+        path
+    );
+    let resp = ureq::get(&url)
+        .set("User-Agent", "Launchpad-App")
+        .call()
+        .map_err(|e| e.to_string())?;
+    resp.into_string().map_err(|e| e.to_string())
+}
+
+/// Return list of skill directory names in {repo}/.claude/skills/
+#[tauri::command]
+pub fn get_installed_skills(
+    project_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let repo_path = {
+        let conn = db_conn!(state);
+        let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
+        project.local_repo_path
+    };
+
+    if repo_path.trim().is_empty() {
+        return Ok(vec![]);
+    }
+
+    let expanded = repo_path.replace('~', &std::env::var("HOME").unwrap_or_default());
+    let skills_dir = std::path::PathBuf::from(&expanded)
+        .join(".claude")
+        .join("skills");
+
+    if !skills_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut names = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                if let Some(name) = entry.file_name().to_str() {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    Ok(names)
+}
+
+/// A safe skill name contains only characters that are safe as a single
+/// directory component.  Rejects empty strings, absolute paths, traversal
+/// components, and null bytes — all of which would cause `PathBuf::join` to
+/// escape the intended `.claude/skills/` directory.
+fn is_safe_skill_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains('\0')
+}
+
+/// Write a skill to {repo}/.claude/skills/{skill_name}/SKILL.md and
+/// update the project's CLAUDE.md skills table.
+#[tauri::command]
+pub fn install_skill(
+    project_id: i64,
+    skill_name: String,
+    category: String,
+    content: String,
+    description: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _ = category; // stored on disk in the path hierarchy; not needed here
+
+    if !is_safe_skill_name(&skill_name) {
+        return Err(format!("Invalid skill name: {skill_name:?}"));
+    }
+
+    let repo_path = {
+        let conn = db_conn!(state);
+        let project = db::fetch_project(&conn, project_id).map_err(|e| e.to_string())?;
+        project.local_repo_path
+    };
+
+    if repo_path.trim().is_empty() {
+        return Err("No repository path configured for this project.".to_string());
+    }
+
+    let expanded = repo_path.replace('~', &std::env::var("HOME").unwrap_or_default());
+    let base = std::path::PathBuf::from(&expanded);
+
+    // Write SKILL.md
+    let skill_dir = base.join(".claude").join("skills").join(&skill_name);
+    std::fs::create_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+    std::fs::write(skill_dir.join("SKILL.md"), &content).map_err(|e| e.to_string())?;
+
+    // Update CLAUDE.md
+    let claude_md_path = base.join("CLAUDE.md");
+    let existing = if claude_md_path.exists() {
+        std::fs::read_to_string(&claude_md_path).map_err(|e| e.to_string())?
+    } else {
+        String::new()
+    };
+    let updated = update_claude_md_skills(&existing, &skill_name, &description);
+    std::fs::write(&claude_md_path, updated).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Pure helper: insert or update a skill row in the CLAUDE.md skills table.
+fn update_claude_md_skills(text: &str, skill_name: &str, description: &str) -> String {
+    let row = format!("| `{}` | {} |", skill_name, description);
+    let skill_header = "### Skills in this project";
+    let when_to_use_header = "## When to use skills";
+    let needle = format!("`{}`", skill_name);
+
+    if text.contains(skill_header) {
+        let lines: Vec<&str> = text.lines().collect();
+        let trailing_newline = text.ends_with('\n');
+
+        if text.contains(&needle) {
+            // Update existing row in place
+            let result: Vec<&str> = lines
+                .iter()
+                .map(|l| {
+                    if l.contains(&needle) && l.starts_with('|') {
+                        row.as_str()
+                    } else {
+                        l
+                    }
+                })
+                .collect();
+            return result.join("\n") + if trailing_newline { "\n" } else { "" };
+        }
+
+        // Find last table row inside this section and insert after it
+        let mut last_table_idx = 0;
+        let mut found_header = false;
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim() == skill_header {
+                found_header = true;
+                continue;
+            }
+            if found_header {
+                if line.starts_with("## ") {
+                    break; // next section
+                }
+                if line.starts_with('|') {
+                    last_table_idx = i;
+                }
+            }
+        }
+        let _ = found_header;
+        let mut result = lines.to_vec();
+        result.insert(last_table_idx + 1, row.as_str());
+        return result.join("\n") + if trailing_newline { "\n" } else { "" };
+    }
+
+    // No skills table yet — build the new section
+    let new_section = format!(
+        "\n### Skills in this project\n\n| Skill | When to use it |\n|-------|----------------|\n{}\n",
+        row
+    );
+
+    if text.contains(when_to_use_header) {
+        let lines: Vec<&str> = text.lines().collect();
+        let trailing_newline = text.ends_with('\n');
+
+        // Find the last line of the "When to use skills" section
+        let mut insert_after = lines.len().saturating_sub(1);
+        let mut in_section = false;
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim() == when_to_use_header {
+                in_section = true;
+                continue;
+            }
+            if in_section {
+                if line.starts_with("## ") {
+                    insert_after = i.saturating_sub(1);
+                    break;
+                }
+                insert_after = i;
+            }
+        }
+        let mut result = lines.to_vec();
+        // Insert the section header + table as individual lines after insert_after
+        let new_lines: Vec<&str> = new_section.lines().collect();
+        for (offset, new_line) in new_lines.iter().enumerate() {
+            result.insert(insert_after + 1 + offset, new_line);
+        }
+        return result.join("\n") + if trailing_newline { "\n" } else { "" };
+    }
+
+    // Append to end of file
+    let mut result = text.to_string();
+    if !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result.push_str(&new_section);
+    result
+}
+
+/// Write version.json for the current app version to the configured update folder.
+/// Returns the path written to.
+#[tauri::command]
+pub fn publish_current_version(
+    notes: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (folder, today) = {
+        let conn = db_conn!(state);
+        let folder = db::get_setting(&conn, "update_folder_path").unwrap_or_default();
+        let today  = conn
+            .query_row("SELECT date('now')", [], |r| r.get::<_, String>(0))
+            .unwrap_or_else(|_| "unknown".to_string());
+        (folder, today)
+    };
+
+    if folder.trim().is_empty() {
+        return Err("No update folder configured in Settings.".to_string());
+    }
+
+    let expanded    = folder.replace('~', &std::env::var("HOME").unwrap_or_default());
+    let folder_path = std::path::PathBuf::from(&expanded);
+
+    if !folder_path.exists() {
+        return Err(format!("Folder does not exist: {}", folder_path.display()));
+    }
+
+    let version = env!("CARGO_PKG_VERSION");
+    let notes_value = if notes.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::String(notes.trim().to_string())
+    };
+
+    let payload = serde_json::json!({
+        "version":  version,
+        "released": today,
+        "notes":    notes_value,
+    });
+
+    let content = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+    let out_path = folder_path.join("version.json");
+    std::fs::write(&out_path, content).map_err(|e| e.to_string())?;
+
+    Ok(out_path.to_string_lossy().to_string())
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_safe_skill_name ────────────────────────────────────────────────────
+
+    #[test]
+    fn safe_name_accepts_kebab_case() {
+        assert!(is_safe_skill_name("code-review"));
+        assert!(is_safe_skill_name("feature-chunking"));
+        assert!(is_safe_skill_name("ui-readability"));
+    }
+
+    #[test]
+    fn safe_name_rejects_empty() {
+        assert!(!is_safe_skill_name(""));
+    }
+
+    #[test]
+    fn safe_name_rejects_traversal() {
+        assert!(!is_safe_skill_name(".."));
+        assert!(!is_safe_skill_name("."));
+        assert!(!is_safe_skill_name("../etc"));
+        assert!(!is_safe_skill_name("foo/bar"));
+    }
+
+    #[test]
+    fn safe_name_rejects_absolute_path() {
+        // PathBuf::join replaces the base if the component is absolute —
+        // this would escape the .claude/skills/ directory entirely.
+        assert!(!is_safe_skill_name("/etc/passwd"));
+        assert!(!is_safe_skill_name("/"));
+    }
+
+    #[test]
+    fn safe_name_rejects_null_byte() {
+        assert!(!is_safe_skill_name("foo\0bar"));
+    }
+
+    // ── update_claude_md_skills ───────────────────────────────────────────────
+
+    /// Empty document: full section created at end.
+    #[test]
+    fn claude_md_empty_document() {
+        let result = update_claude_md_skills("", "my-skill", "Use when testing");
+        assert!(result.contains("### Skills in this project"));
+        assert!(result.contains("| Skill | When to use it |"));
+        assert!(result.contains("| `my-skill` | Use when testing |"));
+    }
+
+    /// Document with no skills-related section at all: section appended.
+    #[test]
+    fn claude_md_no_skills_section() {
+        let text = "# My Project\n\nSome content.\n";
+        let result = update_claude_md_skills(text, "my-skill", "Use when testing");
+        // Original content preserved
+        assert!(result.starts_with("# My Project"));
+        // New section appended after existing content
+        assert!(result.contains("### Skills in this project"));
+        assert!(result.contains("| `my-skill` | Use when testing |"));
+        // Section comes after original content
+        let content_pos = result.find("Some content.").unwrap();
+        let header_pos  = result.find("### Skills in this project").unwrap();
+        assert!(header_pos > content_pos);
+    }
+
+    /// `## When to use skills` present but no `### Skills in this project` table yet.
+    /// New section must be inserted inside the When-to-use-skills section,
+    /// before the next `##` heading.
+    #[test]
+    fn claude_md_when_to_use_section_no_table() {
+        let text = concat!(
+            "## When to use skills\n\n",
+            "Use skills when the task calls for it.\n\n",
+            "## Working principles\n\n",
+            "Be clear.\n",
+        );
+        let result = update_claude_md_skills(text, "my-skill", "Use when testing");
+        assert!(result.contains("### Skills in this project"));
+        assert!(result.contains("| `my-skill` | Use when testing |"));
+        // Skills section must appear between When to use skills and Working principles
+        let when_pos       = result.find("## When to use skills").unwrap();
+        let skills_pos     = result.find("### Skills in this project").unwrap();
+        let principles_pos = result.find("## Working principles").unwrap();
+        assert!(when_pos < skills_pos, "skills header should come after when-to-use");
+        assert!(skills_pos < principles_pos, "skills header should come before working principles");
+    }
+
+    /// Existing `### Skills in this project` table: new row appended after last row.
+    #[test]
+    fn claude_md_existing_table_appends_row() {
+        let text = concat!(
+            "## When to use skills\n\n",
+            "Use skills when...\n\n",
+            "### Skills in this project\n\n",
+            "| Skill | When to use it |\n",
+            "|-------|----------------|\n",
+            "| `existing-skill` | Do X |\n\n",
+            "## Working principles\n",
+        );
+        let result = update_claude_md_skills(text, "new-skill", "Use when new");
+        assert!(result.contains("| `existing-skill` | Do X |"));
+        assert!(result.contains("| `new-skill` | Use when new |"));
+        // New row must come after existing row
+        let existing_pos = result.find("| `existing-skill`").unwrap();
+        let new_pos      = result.find("| `new-skill`").unwrap();
+        assert!(new_pos > existing_pos, "new row should follow existing row");
+        // Existing row must not be duplicated
+        assert_eq!(result.matches("`existing-skill`").count(), 1);
+    }
+
+    /// Duplicate install: description updated in place, no duplicate row.
+    #[test]
+    fn claude_md_duplicate_updates_in_place() {
+        let text = concat!(
+            "### Skills in this project\n\n",
+            "| Skill | When to use it |\n",
+            "|-------|----------------|\n",
+            "| `my-skill` | Old description |\n",
+            "| `other-skill` | Do Y |\n",
+        );
+        let result = update_claude_md_skills(text, "my-skill", "New description");
+        assert!(result.contains("| `my-skill` | New description |"));
+        assert!(!result.contains("Old description"));
+        assert!(result.contains("| `other-skill` | Do Y |"));
+        // Exactly one occurrence of the skill name
+        assert_eq!(result.matches("`my-skill`").count(), 1);
+    }
 }
