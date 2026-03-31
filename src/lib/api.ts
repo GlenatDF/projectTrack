@@ -74,6 +74,9 @@ export const getDashboardStats = (): Promise<DashboardStats> =>
 
 // ── File system ───────────────────────────────────────────────────────────────
 
+export const openUrl = (url: string): Promise<void> =>
+  invoke('open_url', { url });
+
 export const openFolder = (path: string): Promise<void> =>
   invoke('open_folder', { path });
 

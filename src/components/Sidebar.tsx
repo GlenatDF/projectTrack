@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { FolderKanban, FolderSearch, Settings, Loader2, BookOpen } from 'lucide-react';
+import { Rocket, FolderKanban, FolderSearch, Settings, Loader2, BookOpen, MessageSquarePlus } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import type { AutoScanState } from './Layout';
+import { FeedbackModal } from './FeedbackModal';
 
 const navItems = [
   { to: '/', label: 'Projects', icon: FolderKanban, end: true },
@@ -12,7 +13,8 @@ const navItems = [
 ];
 
 export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {
-  const [version, setVersion] = useState('');
+  const [version, setVersion]           = useState('');
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   useEffect(() => { getVersion().then(setVersion).catch(() => {}); }, []);
 
   return (
@@ -20,8 +22,8 @@ export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {
       {/* App identity */}
       <div className="px-4 py-4 border-b border-border">
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded bg-violet-500/20 flex items-center justify-center shrink-0">
-            <FolderKanban size={13} className="text-violet-400" />
+          <div className="w-7 h-7 rounded-lg bg-violet-500/20 border border-violet-500/25 flex items-center justify-center shrink-0">
+            <Rocket size={14} className="text-violet-400" />
           </div>
           <span className="text-xs font-semibold text-slate-200 tracking-tight">
             Launchpad
@@ -62,8 +64,16 @@ export function Sidebar({ autoScanState }: { autoScanState: AutoScanState }) {
         ) : (
           <span className="text-[11px] text-slate-600">{version ? `v${version}` : ''}</span>
         )}
-        <span className="text-[11px] text-slate-700">local</span>
+        <button
+          onClick={() => setFeedbackOpen(true)}
+          title="Send feedback"
+          className="p-1 rounded text-slate-600 hover:text-slate-300 hover:bg-hover transition-colors cursor-default"
+        >
+          <MessageSquarePlus size={13} />
+        </button>
       </div>
+
+      <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </aside>
   );
 }

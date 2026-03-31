@@ -5,7 +5,7 @@ import {
   Bot, Sparkles, FileText, GitBranch, AlertTriangle,
   Download, Activity, CheckCircle2, BarChart3,
   HelpCircle, XCircle, Circle, Star, ClipboardList, ShieldAlert,
-  MessageSquare, Wrench, Wand2, FlaskConical, Hammer, Search,
+  MessageSquare, MessageSquarePlus, Wrench, Wand2, FlaskConical, Hammer, Search,
 } from 'lucide-react';
 
 /* ── Section definitions ──────────────────────────────────────────── */
@@ -652,6 +652,15 @@ export default function Manual() {
               <p className="text-xs text-slate-600 font-mono bg-surface border border-border rounded px-3 py-2">
                 ~/Library/Application Support/com.glen.launchpad/projects.db
               </p>
+            </Card>
+            <Card className="mt-3">
+              <SubHeading>Feedback</SubHeading>
+              <FeatureRow
+                icon={MessageSquarePlus}
+                label="Send feedback"
+                desc="The message icon in the bottom-left of the sidebar is always available. Click it to open a feedback form — choose a type (Bug report, Feature request, or General feedback), add a description, and click Open GitHub issue. Your browser will open a pre-filled GitHub issue ready to submit."
+                iconColor="text-violet-400"
+              />
             </Card>
           </section>
 

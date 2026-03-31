@@ -6,6 +6,7 @@ pill/badge/chip styling, or the overall feel of the interface.
 
 ## When to use it
 - When the task explicitly involves UI appearance, colour, or contrast
+- When **building** new UI components that use coloured or tinted backgrounds — not just when reviewing
 - When reviewing a component for readability in both light and dark mode
 - When a UI review is part of a feature-complete check
 
@@ -35,6 +36,9 @@ pill/badge/chip styling, or the overall feel of the interface.
 - Text that looks fine at large sizes often needs stronger contrast when small
 - Selected states, hover states, and disabled states must all remain readable
 - A pill with `text-green-400` text on a `bg-green-500/15` background fails in light mode — use `text-green-700` or `text-green-800` instead
+- **`text-*-100` and `text-*-200` are near-white in dark mode — invisible on any light background.** These variants are the most common source of light-mode contrast failures. Always check them.
+- After writing any new `text-*-{n}` class on a tinted background, confirm the variant is covered in the light-mode override block in `src/index.css`. The override list must cover `-100` through `-500` for any colour family used.
+- **Use `text-slate-100` for selected/active state text on tinted backgrounds** — it renders near-white in dark mode and is overridden to `#1e293b` in light mode, so it passes in both. Avoid same-family pastels like `text-violet-200` for selected text.
 
 ## Dark Mode Rules
 - Do not let everything blur into soft dark-grey mush

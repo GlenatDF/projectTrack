@@ -155,6 +155,16 @@ pub fn get_dashboard_stats(state: State<'_, AppState>) -> Result<DashboardStats,
 
 // ── File system helpers ───────────────────────────────────────────────────────
 
+/// Open a URL in the system default browser.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    Command::new("open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Open a folder in macOS Finder.
 #[tauri::command]
 pub fn open_folder(path: String) -> Result<(), String> {

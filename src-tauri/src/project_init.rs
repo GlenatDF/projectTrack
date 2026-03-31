@@ -463,6 +463,18 @@ fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
     s.push_str("6. Add automated tests for pure logic/helpers where the test setup allows it\n\n");
     s.push_str("See `.claude/skills/testing-discipline/SKILL.md` for the full testing skill.\n\n");
 
+    // UI always-on rules
+    s.push_str("## UI — always-on rules\n\n");
+    s.push_str("These apply any time you write or edit a UI component. No skill invocation needed.\n\n");
+    s.push_str("1. **Check both modes.** Any coloured text must be readable in dark *and* light mode — not just the mode you are looking at.\n");
+    s.push_str("2. **`text-*-100` through `text-*-400` are dark-mode-only pastels.** Never place them on a tinted background without confirming the variant is covered in the light-mode CSS override block. These classes look fine in dark mode and are invisible in light mode.\n");
+    s.push_str("3. **Opacity-modifier classes bypass CSS overrides.** `text-red-500/70` generates a different selector than `text-red-500` — light-mode overrides will not catch it. Avoid opacity modifiers on text colour; use a darker base class instead.\n");
+    s.push_str("4. **Selected and active states are the highest-risk spot.** Tinted highlight backgrounds make adjacent pale text nearly invisible. Use `text-slate-100` (which is overridden to dark in light mode) rather than a same-family pastel like `text-violet-200`.\n");
+    s.push_str("5. **Check hover and focus state text colours too** — not just resting state. `hover:text-violet-300` is a pastel that can fail in light mode.\n");
+    s.push_str("6. **Small text needs higher contrast.** The same colour that passes at `text-sm` can fail at `text-xs`. When in doubt, go one shade darker.\n");
+    s.push_str("7. **Test at the largest zoom level the app supports.** Tight layouts and truncated text that look fine at 100% often break at 125–130%.\n\n");
+    s.push_str("For a full readability review of a component, invoke the `ui-readability` skill.\n\n");
+
     // When to use skills
     s.push_str("## When to use skills\n\n");
     s.push_str("**This file (CLAUDE.md)** is for standing project context that applies to almost every task: ");
@@ -482,7 +494,7 @@ fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
         s.push_str("|-------|----------------|\n");
         s.push_str("| `project-kickoff` | First session on the project — review docs, find gaps, establish a plan |\n");
         s.push_str("| `feature-chunking` | Before any non-trivial feature — plan chunks first, implement one at a time |\n");
-        s.push_str("| `ui-readability` | When reviewing or improving UI components, colour, contrast, or hierarchy |\n");
+        s.push_str("| `ui-readability` | When building or reviewing UI components with colour, contrast, or hierarchy concerns |\n");
         s.push_str("| `testing-discipline` | When reporting the outcome of any implementation chunk |\n\n");
     }
 

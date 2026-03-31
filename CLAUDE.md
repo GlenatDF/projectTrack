@@ -159,6 +159,17 @@ Before writing any migration in `db.rs`:
 
 ---
 
+## UI — always-on rules
+
+These apply any time you write or edit a React component. No skill invocation needed.
+
+1. **Check both modes.** Any coloured text class must be readable in dark *and* light mode — not just the mode you're looking at.
+2. **`text-*-100` through `text-*-400` are dark-mode-only pastels.** Never place them on a tinted background without confirming the variant is covered in the light-mode override block in `src/index.css`. The override list covers `-100` through `-500` for all colour families — if you add a new colour class, check it is there.
+3. **Selected and active states are the highest-risk spot.** Tinted highlight backgrounds (+20% opacity) make adjacent pale text nearly invisible. Use `text-slate-100` (which is overridden to dark in light mode) rather than a same-family pastel like `text-violet-200`.
+4. For a full review of a component's readability and visual hierarchy, invoke the `ui-readability` skill.
+
+---
+
 ## When to use skills
 
 **This file** is for standing context that applies almost every time Claude touches this repo: architecture, key files, session workflow, build commands, testing standard, and non-negotiable working rules. If a rule should always be followed, it lives here.

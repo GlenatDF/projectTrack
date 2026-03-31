@@ -80,7 +80,7 @@ input, textarea, [data-selectable] {
 }
 
 :root[data-theme="light"] .text-slate-500 {
-  color: #64748b; /* unchanged — already readable */
+  color: #475569; /* slate-600 — bumped for readability on panel backgrounds */
 }
 
 :root[data-theme="light"] .text-slate-600 {
@@ -88,48 +88,81 @@ input, textarea, [data-selectable] {
 }
 
 /* ── Light mode: chromatic text color overrides ───────────────────────────── */
-/* Pastel text classes (-300, -400) are designed for dark backgrounds.
-   Override them to their -700 equivalents for sufficient contrast on light surfaces. */
+/* Pastel text classes (-100 through -500) are designed for dark backgrounds.
+   Override them to their -700/-800 equivalents for sufficient contrast on light surfaces.
+   Cover -100 and -200 as well — these are even paler and fully unreadable on any light bg. */
 
+:root[data-theme="light"] .text-violet-100,
+:root[data-theme="light"] .text-violet-200,
 :root[data-theme="light"] .text-violet-300,
 :root[data-theme="light"] .text-violet-400 { color: #6d28d9; } /* violet-700 */
 
+:root[data-theme="light"] .text-purple-100,
+:root[data-theme="light"] .text-purple-200,
 :root[data-theme="light"] .text-purple-300,
 :root[data-theme="light"] .text-purple-400 { color: #7e22ce; } /* purple-700 */
 
+:root[data-theme="light"] .text-blue-100,
+:root[data-theme="light"] .text-blue-200,
 :root[data-theme="light"] .text-blue-300,
 :root[data-theme="light"] .text-blue-400   { color: #1d4ed8; } /* blue-700 */
 
+:root[data-theme="light"] .text-cyan-100,
+:root[data-theme="light"] .text-cyan-200,
 :root[data-theme="light"] .text-cyan-300,
 :root[data-theme="light"] .text-cyan-400   { color: #0e7490; } /* cyan-700 */
 
+:root[data-theme="light"] .text-teal-100,
+:root[data-theme="light"] .text-teal-200,
 :root[data-theme="light"] .text-teal-300,
 :root[data-theme="light"] .text-teal-400   { color: #0f766e; } /* teal-700 */
 
+:root[data-theme="light"] .text-green-100,
+:root[data-theme="light"] .text-green-200,
 :root[data-theme="light"] .text-green-300,
 :root[data-theme="light"] .text-green-400,
 :root[data-theme="light"] .text-green-500  { color: #15803d; } /* green-700 */
 
+:root[data-theme="light"] .text-yellow-100,
+:root[data-theme="light"] .text-yellow-200,
 :root[data-theme="light"] .text-yellow-300,
 :root[data-theme="light"] .text-yellow-400,
-:root[data-theme="light"] .text-yellow-500 { color: #a16207; } /* yellow-700 */
+:root[data-theme="light"] .text-yellow-500 { color: #854d0e; } /* yellow-800 */
 
+:root[data-theme="light"] .text-amber-100,
+:root[data-theme="light"] .text-amber-200,
 :root[data-theme="light"] .text-amber-300,
 :root[data-theme="light"] .text-amber-400,
-:root[data-theme="light"] .text-amber-500  { color: #b45309; } /* amber-700 */
+:root[data-theme="light"] .text-amber-500  { color: #92400e; } /* amber-800 */
 
+:root[data-theme="light"] .text-orange-100,
+:root[data-theme="light"] .text-orange-200,
 :root[data-theme="light"] .text-orange-300,
 :root[data-theme="light"] .text-orange-400 { color: #c2410c; } /* orange-700 */
 
+:root[data-theme="light"] .text-pink-100,
+:root[data-theme="light"] .text-pink-200,
 :root[data-theme="light"] .text-pink-300,
 :root[data-theme="light"] .text-pink-400   { color: #be185d; } /* pink-700 */
 
+:root[data-theme="light"] .text-rose-100,
+:root[data-theme="light"] .text-rose-200,
 :root[data-theme="light"] .text-rose-300,
 :root[data-theme="light"] .text-rose-400   { color: #be123c; } /* rose-700 */
 
+:root[data-theme="light"] .text-red-100,
+:root[data-theme="light"] .text-red-200,
 :root[data-theme="light"] .text-red-300,
-:root[data-theme="light"] .text-red-400    { color: #b91c1c; } /* red-700 */
+:root[data-theme="light"] .text-red-400,
+:root[data-theme="light"] .text-red-500    { color: #b91c1c; } /* red-700 */
 
+:root[data-theme="light"] .text-emerald-100,
+:root[data-theme="light"] .text-emerald-200,
+:root[data-theme="light"] .text-emerald-300,
+:root[data-theme="light"] .text-emerald-400 { color: #047857; } /* emerald-700 */
+
+:root[data-theme="light"] .text-gray-100,
+:root[data-theme="light"] .text-gray-200,
 :root[data-theme="light"] .text-gray-300,
 :root[data-theme="light"] .text-gray-400   { color: #374151; } /* gray-700 */
 

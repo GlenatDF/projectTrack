@@ -81,6 +81,7 @@ pub fn run() {
             commands::get_latest_scans,
             commands::validate_repo_path,
             commands::get_dashboard_stats,
+            commands::open_url,
             commands::open_folder,
             commands::open_in_vscode,
             commands::open_in_terminal,
