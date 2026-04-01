@@ -9,7 +9,7 @@ use crate::db::{self, CreateProject};
 /// Version of the generated project scaffold (docs + skills template).
 /// Bump this whenever the output changes meaningfully so generated projects
 /// can be compared against the version that created them.
-const SCAFFOLD_VERSION: &str = "1.2.0";
+const SCAFFOLD_VERSION: &str = "2.0.0";
 
 // ── Progress event ─────────────────────────────────────────────────────────────
 
@@ -38,6 +38,8 @@ pub fn emit_progress(app: &tauri::AppHandle, step: &str, label: &str, status: &s
 
 // ── Request / Response ─────────────────────────────────────────────────────────
 
+fn default_template_mode() -> String { "standard".to_string() }
+
 #[derive(Debug, Deserialize)]
 pub struct ProjectInitRequest {
     pub name: String,
@@ -51,6 +53,9 @@ pub struct ProjectInitRequest {
     pub ui_style: String,
     pub create_git_repo: bool,
     pub create_claude_skills: bool,
+    /// "small" | "standard" | "full" — defaults to "standard" if omitted
+    #[serde(default = "default_template_mode")]
+    pub template_mode: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,26 +84,45 @@ pub fn write_docs_and_skills(
 
     emit(app, "docs", "Generating markdown docs", "running");
     let today = today_iso();
+    let mode = req.template_mode.as_str();
+    let slug = slugify(&req.name);
+    let stack = template_label(&req.starter_template);
+    let app_type = project_type_label(&req.project_type);
+
     let claude_md = match claude_md_override {
         Some(tpl) if !tpl.trim().is_empty() => tpl
+            // New uppercase tokens
+            .replace("{{PROJECT_NAME}}", &req.name)
+            .replace("{{PROJECT_SLUG}}", &slug)
+            .replace("{{PROJECT_DESC}}", &req.description)
+            .replace("{{PRIMARY_STACK}}", stack)
+            .replace("{{APP_TYPE}}", app_type)
+            .replace("{{PROJECT_DATE}}", &today)
+            // Legacy lowercase tokens (backwards compat)
             .replace("{{project_name}}", &req.name)
             .replace("{{project_description}}", &req.description),
-        _ => tmpl_claude_md(req),
+        _ => tmpl_claude_md(req, mode),
     };
-    let docs: &[(&str, String)] = &[
-        ("CLAUDE.md",                                  claude_md),
-        ("README.md",                                  tmpl_readme(req)),
-        ("docs/PROJECT_BRIEF.md",                      tmpl_brief(req)),
-        ("docs/PRODUCT_REQUIREMENTS.md",               tmpl_prd(req, &today)),
-        ("docs/TECHNICAL_SPEC.md",                     tmpl_tech_spec(req, &today)),
-        ("docs/TASKS.md",                              tmpl_tasks(req)),
-        ("docs/DECISION_LOG.md",                       tmpl_decision_log(req, &today)),
-        ("docs/SESSION_LOG.md",                        tmpl_session_log()),
-        ("docs/RISKS_ASSUMPTIONS_DEPENDENCIES.md",     tmpl_risks(req)),
-        ("docs/PROJECT_STAGE.md",                      tmpl_project_stage(&today)),
-        ("docs/PROJECT_START_PROMPT.md",               tmpl_start_prompt(req)),
+
+    // Base docs — all modes
+    let mut doc_list: Vec<(&str, String)> = vec![
+        ("CLAUDE.md",      claude_md),
+        ("README.md",      tmpl_readme(req, mode)),
+        ("docs/BRIEF.md",  tmpl_brief(req)),
+        ("docs/TASKS.md",  tmpl_tasks(req, mode)),
+        ("docs/STAGE.md",  tmpl_project_stage(&today)),
     ];
-    for (name, content) in docs {
+
+    // Standard + Full docs
+    if mode != "small" {
+        doc_list.push(("docs/REQUIREMENTS.md", tmpl_prd(req, &today)));
+        doc_list.push(("docs/TECHNICAL.md",    tmpl_tech_spec(req, &today)));
+        doc_list.push(("docs/DECISIONS.md",    tmpl_decision_log(req, &today)));
+        doc_list.push(("docs/SESSIONS.md",     tmpl_session_log()));
+        doc_list.push(("docs/RISKS.md",        tmpl_risks(req)));
+    }
+
+    for (name, content) in &doc_list {
         if let Err(e) = write_file(project_dir, name, content) {
             emit(app, "docs", "Generating markdown docs", "error");
             return Err(e);
@@ -109,13 +133,21 @@ pub fn write_docs_and_skills(
 
     if req.create_claude_skills {
         emit(app, "skills", "Generating Claude skills", "running");
-        let skills: &[(&str, String)] = &[
-            (".claude/skills/project-kickoff/SKILL.md",    skill_project_kickoff()),
+
+        // Small mode: minimal skill set
+        // Standard / Full: full skill set
+        let mut skill_list: Vec<(&str, String)> = vec![
             (".claude/skills/feature-chunking/SKILL.md",   skill_feature_chunking()),
-            (".claude/skills/ui-readability/SKILL.md",     skill_ui_readability()),
             (".claude/skills/testing-discipline/SKILL.md", skill_testing_discipline()),
         ];
-        for (path, content) in skills {
+        if mode != "small" {
+            skill_list.push((".claude/skills/project-kickoff/SKILL.md",  skill_project_kickoff()));
+            skill_list.push((".claude/skills/debug/SKILL.md",            skill_debug()));
+            skill_list.push((".claude/skills/ui-readability/SKILL.md",   skill_ui_readability()));
+            skill_list.push((".claude/skills/frontend/SKILL.md",         skill_frontend()));
+        }
+
+        for (path, content) in &skill_list {
             if let Err(e) = write_file(project_dir, path, content) {
                 emit(app, "skills", "Generating Claude skills", "error");
                 return Err(e);
@@ -320,10 +352,6 @@ fn add_ons_bullets(add_ons: &[String]) -> String {
     add_ons.iter().map(|a| format!("- {a}\n")).collect()
 }
 
-fn add_ons_inline(add_ons: &[String]) -> String {
-    if add_ons.is_empty() { String::new() }
-    else { format!(" · {}", add_ons.join(", ")) }
-}
 
 /// Returns `s` if non-empty, otherwise `fallback`.
 fn opt<'a>(s: &'a str, fallback: &'a str) -> &'a str {
@@ -354,7 +382,7 @@ fn template_label(t: &str) -> &str {
 
 // ── Markdown templates ─────────────────────────────────────────────────────────
 
-fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
+fn tmpl_claude_md(r: &ProjectInitRequest, mode: &str) -> String {
     let mut s = String::new();
     s.push_str(&format!("# CLAUDE.md — {}\n\n", r.name));
     s.push_str("This file gives Claude Code context for this project.\n");
@@ -366,23 +394,21 @@ fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
     s.push_str("## Overview\n\n");
     s.push_str(&format!("{}\n\n", opt(&r.description, "_Add a one-line description of what this project is._")));
     s.push_str(&format!("**Type:** {}  \n", project_type_label(&r.project_type)));
-    s.push_str(&format!("**Template:** {}  \n", template_label(&r.starter_template)));
-    s.push_str("**Stage:** See docs/PROJECT_STAGE.md\n\n");
+    s.push_str(&format!("**Stack:** {}  \n", template_label(&r.starter_template)));
+    s.push_str("**Stage:** See docs/STAGE.md\n\n");
 
     // Goal
     if !r.main_goal.trim().is_empty() {
         s.push_str("## Goal\n\n");
         s.push_str(&format!("{}\n\n", r.main_goal));
-    } else {
-        s.push_str("## Goal\n\n_Define the primary goal of this project here._\n\n");
     }
 
-    // Stack
-    s.push_str("## Stack\n\n");
-    s.push_str(&format!("**Base template:** {}\n\n", template_label(&r.starter_template)));
-    s.push_str("**Add-ons / integrations:**\n\n");
-    s.push_str(&add_ons_bullets(&r.add_ons));
-    s.push('\n');
+    // Stack add-ons
+    if !r.add_ons.is_empty() {
+        s.push_str("## Add-ons / integrations\n\n");
+        s.push_str(&add_ons_bullets(&r.add_ons));
+        s.push('\n');
+    }
 
     // Constraints
     if !r.constraints.trim().is_empty() {
@@ -402,42 +428,64 @@ fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
         s.push('\n');
     }
 
+    // Read this first
+    s.push_str("## Read this first\n\n");
+    s.push_str("At the start of every session, read in this order:\n\n");
+    s.push_str("1. `docs/STAGE.md` — where the project is right now\n");
+    s.push_str("2. `docs/BRIEF.md` — what the project is and why it exists\n");
+    s.push_str("3. `docs/TASKS.md` — what needs doing next\n");
+    if mode != "small" {
+        s.push_str("\nIf you need more context, also read:\n\n");
+        s.push_str("4. `docs/REQUIREMENTS.md` — what we are building\n");
+        s.push_str("5. `docs/TECHNICAL.md` — how it is built\n");
+        s.push_str("6. `docs/DECISIONS.md` — key decisions and rationale\n");
+    }
+    s.push_str("\nBefore making any changes:\n");
+    s.push_str("- Check git status and review recent commits\n");
+    s.push_str("- Summarise your understanding of the current state\n");
+    s.push_str("- Propose next steps before starting work\n");
+    s.push_str("- Do not edit files until asked\n\n");
+
     // Session workflow
     s.push_str("## Session workflow\n\n");
     s.push_str("**At the start of each session:**\n\n");
-    s.push_str("1. Read docs/TASKS.md — identify what is currently in progress or should be picked up next\n");
-    s.push_str("2. Check docs/PROJECT_STAGE.md — confirm the current phase\n");
-    s.push_str("3. Briefly summarise your understanding before making any changes\n");
-    s.push_str("4. Ask clarifying questions rather than guessing on scope or approach\n\n");
+    s.push_str("1. Read the files listed above in order\n");
+    s.push_str("2. Summarise the current state and any gaps you notice\n");
+    s.push_str("3. Confirm the next task before writing code\n");
+    s.push_str("4. Ask clarifying questions rather than guessing on scope\n\n");
 
     s.push_str("**During the session:**\n\n");
-    s.push_str("- Before starting a non-trivial task, check whether a skill applies and read its file\n");
+    s.push_str("- Check whether a relevant skill applies before starting a non-trivial task\n");
     s.push_str("- Make the smallest change that achieves the goal\n");
-    s.push_str("- Avoid refactoring or improving code that is not directly related to the task\n");
     s.push_str("- Keep changes focused and reviewable — one concern per edit\n");
-    s.push_str("- Flag blockers immediately rather than working around them silently\n");
-    s.push_str("- If you are uncertain about an architectural decision, say so and propose options\n\n");
+    s.push_str("- Flag blockers immediately — do not work around them silently\n");
+    s.push_str("- If uncertain about an architectural decision, say so and propose options\n\n");
 
     s.push_str("**At the end of each session:**\n\n");
     s.push_str("- Update docs/TASKS.md: mark completed tasks done, add anything newly discovered\n");
-    s.push_str("- Add an entry to docs/SESSION_LOG.md: what was done, blockers, and next steps\n");
-    s.push_str("- Log any significant decisions to docs/DECISION_LOG.md with context and rationale\n");
-    s.push_str("- Update docs/PROJECT_STAGE.md if the stage has changed\n\n");
+    s.push_str("- Update docs/STAGE.md if the phase or status has changed\n");
+    if mode != "small" {
+        s.push_str("- Log significant decisions to docs/DECISIONS.md with context and rationale\n");
+        s.push_str("- Add a brief entry to docs/SESSIONS.md if useful\n");
+    }
+    s.push('\n');
 
     // Key files table
     s.push_str("## Key files\n\n");
     s.push_str("| File | Purpose |\n");
     s.push_str("|------|---------|\n");
     s.push_str("| CLAUDE.md | You are reading it — project context for Claude |\n");
-    s.push_str("| docs/PROJECT_BRIEF.md | One-page overview of what this is and why it exists |\n");
-    s.push_str("| docs/PRODUCT_REQUIREMENTS.md | Feature requirements and acceptance criteria |\n");
-    s.push_str("| docs/TECHNICAL_SPEC.md | Architecture, stack, and technical decisions |\n");
-    s.push_str("| docs/TASKS.md | Living task list — keep this current throughout development |\n");
-    s.push_str("| docs/DECISION_LOG.md | Record of key decisions with context and rationale |\n");
-    s.push_str("| docs/SESSION_LOG.md | Brief notes from each working session |\n");
-    s.push_str("| docs/RISKS_ASSUMPTIONS_DEPENDENCIES.md | Known risks, assumptions, and constraints |\n");
-    s.push_str("| docs/PROJECT_STAGE.md | Current stage and what has been completed |\n");
-    s.push_str("| docs/PROJECT_START_PROMPT.md | Starter prompt to give Claude at the start of a session |\n\n");
+    s.push_str("| docs/BRIEF.md | What this project is and why it exists |\n");
+    s.push_str("| docs/TASKS.md | Living task list — keep this current |\n");
+    s.push_str("| docs/STAGE.md | Current stage and what has been completed |\n");
+    if mode != "small" {
+        s.push_str("| docs/REQUIREMENTS.md | Feature requirements and acceptance criteria |\n");
+        s.push_str("| docs/TECHNICAL.md | Architecture, stack, and technical decisions |\n");
+        s.push_str("| docs/DECISIONS.md | Record of key decisions with context and rationale |\n");
+        s.push_str("| docs/SESSIONS.md | Brief notes from each working session |\n");
+        s.push_str("| docs/RISKS.md | Known risks, assumptions, and constraints |\n");
+    }
+    s.push('\n');
 
     // Testing standard
     s.push_str("## Testing standard\n\n");
@@ -492,11 +540,36 @@ fn tmpl_claude_md(r: &ProjectInitRequest) -> String {
         s.push_str("### Skills in this project\n\n");
         s.push_str("| Skill | When to use it |\n");
         s.push_str("|-------|----------------|\n");
-        s.push_str("| `project-kickoff` | First session on the project — review docs, find gaps, establish a plan |\n");
+        if mode != "small" {
+            s.push_str("| `project-kickoff` | First session on the project — review docs, find gaps, establish a plan |\n");
+        }
         s.push_str("| `feature-chunking` | Before any non-trivial feature — plan chunks first, implement one at a time |\n");
-        s.push_str("| `ui-readability` | When building or reviewing UI components with colour, contrast, or hierarchy concerns |\n");
-        s.push_str("| `testing-discipline` | When reporting the outcome of any implementation chunk |\n\n");
+        s.push_str("| `testing-discipline` | When reporting the outcome of any implementation chunk |\n");
+        if mode != "small" {
+            s.push_str("| `debug` | When something is broken and two attempts have not fixed it |\n");
+            s.push_str("| `ui-readability` | When building or reviewing UI components with colour, contrast, or hierarchy concerns |\n");
+            s.push_str("| `frontend` | Any project with a user interface — component structure, API layer, TypeScript rules |\n");
+        }
+        s.push('\n');
     }
+
+    // Dependency rules
+    s.push_str("## Dependencies\n\n");
+    s.push_str("**Before suggesting or adding any package, confirm all of the following:**\n\n");
+    s.push_str("1. The package exists and the exact name is correct — check npmjs.com\n");
+    s.push_str("2. It is from the intended maintainer — check download count, GitHub repo, recent releases\n");
+    s.push_str("3. The project does not already have something that does the same job\n");
+    s.push_str("4. You can explain in one sentence why it is needed\n\n");
+    s.push_str("**Do not add a package just because an AI suggested it.** ");
+    s.push_str("Verify it is real, correctly named, and appropriate before installing.\n\n");
+    s.push_str("**npm hygiene (JS/TS projects):**\n\n");
+    s.push_str("- Commit `package-lock.json` — it records exactly what was installed\n");
+    s.push_str("- Use `npm ci` in CI and for reproducible installs (reads the lockfile strictly)\n");
+    s.push_str("- Run `npm audit` regularly; treat high-severity findings as blockers\n");
+    s.push_str("- Do not add `^` or `~` to package versions without a documented reason\n");
+    s.push_str("- Avoid packages with `install` or `postinstall` scripts unless clearly justified\n");
+    s.push_str("- Prefer built-in platform features or existing dependencies before adding new ones\n");
+    s.push_str("- Use `overrides` in `package.json` to pin or block a bad transitive dependency\n\n");
 
     // Principles
     s.push_str("## Working principles\n\n");
@@ -565,7 +638,7 @@ fn tmpl_brief(r: &ProjectInitRequest) -> String {
 
 fn tmpl_prd(r: &ProjectInitRequest, today: &str) -> String {
     let mut s = String::new();
-    s.push_str(&format!("# Product Requirements — {}\n\n", r.name));
+    s.push_str(&format!("# Requirements — {}\n\n", r.name));
     s.push_str(&format!("**Status:** Draft  \n**Last updated:** {today}\n\n---\n\n"));
 
     s.push_str("## Overview\n\n");
@@ -669,12 +742,12 @@ fn tmpl_tech_spec(r: &ProjectInitRequest, today: &str) -> String {
     }
 
     s.push_str("---\n\n## Key decisions\n\n");
-    s.push_str("See docs/DECISION_LOG.md for full decision history with context and rationale.\n");
+    s.push_str("See docs/DECISIONS.md for full decision history with context and rationale.\n");
 
     s
 }
 
-fn tmpl_tasks(r: &ProjectInitRequest) -> String {
+fn tmpl_tasks(r: &ProjectInitRequest, mode: &str) -> String {
     let mut s = String::new();
     s.push_str(&format!("# Tasks — {}\n\n", r.name));
     s.push_str("This is the living task list. Keep it current as work progresses.\n\n");
@@ -685,10 +758,14 @@ fn tmpl_tasks(r: &ProjectInitRequest) -> String {
     s.push_str("- `[-]` Skipped or will not do\n\n---\n\n");
 
     s.push_str("## Phase 1 — Setup and planning\n\n");
-    s.push_str("- [ ] Read all generated docs and fill in the gaps (docs/PROJECT_BRIEF, docs/PRODUCT_REQUIREMENTS, docs/TECHNICAL_SPEC)\n");
-    s.push_str("- [ ] Confirm the architecture approach in docs/TECHNICAL_SPEC.md\n");
-    s.push_str("- [ ] Define the core data model\n");
-    s.push_str("- [ ] List the first 3–5 user-facing requirements in docs/PRODUCT_REQUIREMENTS.md\n");
+    if mode == "small" {
+        s.push_str("- [ ] Read docs/BRIEF.md and fill in the description, goal, and scope\n");
+    } else {
+        s.push_str("- [ ] Read all generated docs and fill in the gaps (docs/BRIEF.md, docs/REQUIREMENTS.md, docs/TECHNICAL.md)\n");
+        s.push_str("- [ ] Confirm the architecture approach in docs/TECHNICAL.md\n");
+        s.push_str("- [ ] Define the core data model\n");
+        s.push_str("- [ ] List the first 3–5 user-facing requirements in docs/REQUIREMENTS.md\n");
+    }
     s.push_str("- [ ] Set up the development environment\n");
     if r.starter_template != "blank" {
         s.push_str(&format!("- [ ] Verify the {} template builds and runs cleanly\n", template_label(&r.starter_template)));
@@ -702,11 +779,16 @@ fn tmpl_tasks(r: &ProjectInitRequest) -> String {
     s.push_str("- [ ] _[Feature 2 — step 1]_\n\n");
 
     s.push_str("## Phase 3 — Polish and ship\n\n");
-    s.push_str("- [ ] Verify all requirements from docs/PRODUCT_REQUIREMENTS.md are met\n");
+    if mode != "small" {
+        s.push_str("- [ ] Verify all requirements from docs/REQUIREMENTS.md are met\n");
+    }
     s.push_str("- [ ] Test primary and secondary user flows end-to-end\n");
     s.push_str("- [ ] Review readability, accessibility, and error states\n");
     s.push_str("- [ ] Update README.md with accurate setup and usage instructions\n");
-    s.push_str("- [ ] Confirm all docs (docs/DECISION_LOG, docs/SESSION_LOG) are up to date\n\n");
+    if mode != "small" {
+        s.push_str("- [ ] Confirm docs/DECISIONS.md and docs/SESSIONS.md are up to date\n");
+    }
+    s.push('\n');
 
     s.push_str("---\n\n## Backlog\n\n");
     s.push_str("_Ideas and future tasks that are not yet prioritised:_\n\n");
@@ -717,7 +799,7 @@ fn tmpl_tasks(r: &ProjectInitRequest) -> String {
 
 fn tmpl_decision_log(r: &ProjectInitRequest, today: &str) -> String {
     let mut s = String::new();
-    s.push_str(&format!("# Decision Log — {}\n\n", r.name));
+    s.push_str(&format!("# Decisions — {}\n\n", r.name));
     s.push_str("Record key technical and product decisions here so future contributors\n");
     s.push_str("(and future you) understand why things are the way they are.\n\n");
     s.push_str("---\n\n## When to log a decision\n\n");
@@ -750,14 +832,14 @@ fn tmpl_decision_log(r: &ProjectInitRequest, today: &str) -> String {
     s.push_str("Other templates or starting from scratch without a template.\n\n");
     s.push_str("**Consequences:**  \n");
     s.push_str(&format!("Committed to the conventions and tooling of {}. ", template_label(&r.starter_template)));
-    s.push_str("See docs/TECHNICAL_SPEC.md for full stack details.\n");
+    s.push_str("See docs/TECHNICAL.md for full stack details.\n");
 
     s
 }
 
 fn tmpl_session_log() -> String {
     let mut s = String::new();
-    s.push_str("# Session Log\n\n");
+    s.push_str("# Sessions\n\n");
     s.push_str("Brief notes from each working session. Keep entries short — a few bullet points is enough.\n\n");
     s.push_str("The goal is to be able to resume quickly after a break and to give Claude\n");
     s.push_str("useful context at the start of the next session.\n\n");
@@ -825,12 +907,12 @@ fn tmpl_project_stage(today: &str) -> String {
     s.push_str("**Target:** Setup complete and core build ready to begin\n\n");
     s.push_str("---\n\n## What has been done\n\n");
     s.push_str("- Project initialised with base documentation\n");
-    s.push_str("- CLAUDE.md, docs/PROJECT_BRIEF.md, docs/TASKS.md, and supporting docs generated\n\n");
+    s.push_str("- CLAUDE.md, docs/BRIEF.md, docs/TASKS.md, and supporting docs generated\n\n");
     s.push_str("## In progress\n\n");
     s.push_str("- Reviewing and filling in project documentation\n");
     s.push_str("- Confirming architecture and technology choices\n\n");
     s.push_str("## Up next\n\n");
-    s.push_str("- Complete docs/TECHNICAL_SPEC.md and docs/PRODUCT_REQUIREMENTS.md\n");
+    s.push_str("- Complete docs/TECHNICAL.md and docs/REQUIREMENTS.md\n");
     s.push_str("- Begin Phase 1 tasks in docs/TASKS.md\n\n");
     s.push_str("## Blockers\n\n");
     s.push_str("- _None currently — update this if anything blocks progress_\n\n");
@@ -847,63 +929,8 @@ fn tmpl_project_stage(today: &str) -> String {
     s
 }
 
-fn tmpl_start_prompt(r: &ProjectInitRequest) -> String {
-    let mut s = String::new();
-    s.push_str(&format!("# Project Start Prompt — {}\n\n", r.name));
-    s.push_str("Use this prompt at the start of a new Claude Code session.\n\n");
-    s.push_str("**Option A** — Paste directly into a new Claude session.  \n");
-    s.push_str("**Option B** — Use the Session tab in Project Tracker (it uses this prompt automatically).\n\n");
-    s.push_str("---\n\n## Prompt\n\n---\n\n");
 
-    s.push_str(&format!("You are working on **{}**, a {} project.\n\n", r.name, project_type_label(&r.project_type)));
-
-    if !r.description.trim().is_empty() {
-        s.push_str(&format!("{}\n\n", r.description));
-    }
-    if !r.main_goal.trim().is_empty() {
-        s.push_str(&format!("**Goal:** {}\n\n", r.main_goal));
-    }
-
-    s.push_str("Before we begin, please:\n\n");
-    s.push_str("1. Read **CLAUDE.md** — project context, stack details, and working preferences\n");
-    s.push_str("2. Read **docs/TASKS.md** — identify what is in progress or should be picked up next\n");
-    s.push_str("3. Read **docs/PROJECT_STAGE.md** — understand the current phase\n");
-    s.push_str("4. Briefly summarise what you have understood (current task, current stage, any blockers)\n");
-    s.push_str("5. Ask what we are working on today\n\n");
-    s.push_str("Do not start writing or changing code until you have read those files and confirmed the plan.\n\n");
-    s.push_str("When you complete each chunk of work, report testing honestly using the Testing Standard\n");
-    s.push_str("in CLAUDE.md. Build passing is not the same as tested — say exactly what was verified.\n\n");
-    s.push_str("---\n\n");
-
-    // Context block
-    s.push_str("## Quick context\n\n");
-    s.push_str(&format!("**Stack:** {}{}\n", template_label(&r.starter_template), add_ons_inline(&r.add_ons)));
-    if !r.constraints.trim().is_empty() {
-        s.push_str(&format!("**Constraints:** {}\n", r.constraints));
-    }
-    if !r.coding_style.trim().is_empty() {
-        s.push_str(&format!("**Coding style:** {}\n", r.coding_style));
-    }
-    if !r.ui_style.trim().is_empty() {
-        s.push_str(&format!("**UI style:** {}\n", r.ui_style));
-    }
-    s.push('\n');
-
-    s.push_str("---\n\n## Useful prompts for different situations\n\n");
-    s.push_str("**Starting a new feature:**\n");
-    s.push_str("> Read the docs, then propose a task breakdown for [feature]. ");
-    s.push_str("Keep it minimal and ask clarifying questions before we start.\n\n");
-    s.push_str("**Picking up from a previous session:**\n");
-    s.push_str("> Read docs/SESSION_LOG.md and docs/TASKS.md. Tell me what was last worked on and what the most important next step is.\n\n");
-    s.push_str("**Health check:**\n");
-    s.push_str("> Read all the docs and give me a brief project health check — what is done, what is blocked, what is unclear.\n\n");
-    s.push_str("**Reviewing before shipping:**\n");
-    s.push_str("> Read docs/PRODUCT_REQUIREMENTS.md and cross-check it against the codebase. List anything that is missing or incomplete.\n");
-
-    s
-}
-
-fn tmpl_readme(r: &ProjectInitRequest) -> String {
+fn tmpl_readme(r: &ProjectInitRequest, mode: &str) -> String {
     let slug = slugify(&r.name);
     let mut s = String::new();
     s.push_str(&format!("# {}\n\n", r.name));
@@ -935,17 +962,20 @@ fn tmpl_readme(r: &ProjectInitRequest) -> String {
         s.push('\n');
     }
 
-    s.push_str("---\n\n## Documentation\n\n");
-    s.push_str("This project uses structured markdown docs for project management and AI-assisted development.\n\n");
+    s.push_str("---\n\n## Docs\n\n");
     s.push_str("| Doc | Purpose |\n");
     s.push_str("|-----|---------|\n");
     s.push_str("| [CLAUDE.md](CLAUDE.md) | Context for Claude Code — read this first |\n");
-    s.push_str("| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) | What this project is and why it exists |\n");
-    s.push_str("| [docs/PRODUCT_REQUIREMENTS.md](docs/PRODUCT_REQUIREMENTS.md) | Feature requirements |\n");
-    s.push_str("| [docs/TECHNICAL_SPEC.md](docs/TECHNICAL_SPEC.md) | Architecture and technical decisions |\n");
+    s.push_str("| [docs/BRIEF.md](docs/BRIEF.md) | What this project is and why it exists |\n");
     s.push_str("| [docs/TASKS.md](docs/TASKS.md) | Current task list |\n");
-    s.push_str("| [docs/DECISION_LOG.md](docs/DECISION_LOG.md) | Key decisions and rationale |\n");
-    s.push_str("| [docs/SESSION_LOG.md](docs/SESSION_LOG.md) | Working session notes |\n\n");
+    s.push_str("| [docs/STAGE.md](docs/STAGE.md) | Current project stage |\n");
+    if mode != "small" {
+        s.push_str("| [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | Feature requirements |\n");
+        s.push_str("| [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture and technical decisions |\n");
+        s.push_str("| [docs/DECISIONS.md](docs/DECISIONS.md) | Key decisions and rationale |\n");
+        s.push_str("| [docs/SESSIONS.md](docs/SESSIONS.md) | Working session notes |\n");
+    }
+    s.push('\n');
 
     if !r.constraints.trim().is_empty() {
         s.push_str("---\n\n## Constraints\n\n");
@@ -971,11 +1001,12 @@ fn skill_project_kickoff() -> String {
     s.push_str("### 1. Read all project documents\n\n");
     s.push_str("In order:\n\n");
     s.push_str("1. CLAUDE.md — project context and working preferences\n");
-    s.push_str("2. docs/PROJECT_BRIEF.md — what and why\n");
-    s.push_str("3. docs/PRODUCT_REQUIREMENTS.md — what needs to be built\n");
-    s.push_str("4. docs/TECHNICAL_SPEC.md — how it will be built\n");
-    s.push_str("5. docs/TASKS.md — current task list\n");
-    s.push_str("6. docs/RISKS_ASSUMPTIONS_DEPENDENCIES.md — known constraints\n\n");
+    s.push_str("2. docs/STAGE.md — current phase and what has been done\n");
+    s.push_str("3. docs/BRIEF.md — what and why\n");
+    s.push_str("4. docs/REQUIREMENTS.md — what needs to be built\n");
+    s.push_str("5. docs/TECHNICAL.md — how it will be built\n");
+    s.push_str("6. docs/TASKS.md — current task list\n");
+    s.push_str("7. docs/RISKS.md — known constraints (if present)\n\n");
     s.push_str("### 2. Identify gaps and problems\n\n");
     s.push_str("After reading, note:\n\n");
     s.push_str("- Sections that are still placeholder or incomplete\n");
@@ -1039,7 +1070,7 @@ fn skill_feature_chunking() -> String {
     s.push_str("2. If the chunk changed visible UI, manually verify the affected flow where practical\n");
     s.push_str("3. Report testing honestly using the testing-discipline format\n");
     s.push_str("4. Flag any new scope discovered — let it become its own chunk\n");
-    s.push_str("5. If a significant decision was made, log it in DECISION_LOG.md\n\n");
+    s.push_str("5. If a significant decision was made, log it in docs/DECISIONS.md\n\n");
     s.push_str("## Red flags — stop and check with the user\n\n");
     s.push_str("- The change is touching more files than the chunk plan anticipated\n");
     s.push_str("- The change requires modifying a data model or API contract\n");
@@ -1193,6 +1224,145 @@ fn skill_testing_discipline() -> String {
     s
 }
 
+fn skill_debug() -> String {
+    let mut s = String::new();
+    s.push_str("# Debug\n\n");
+    s.push_str("## Purpose\n\n");
+    s.push_str("Use this skill when something is broken and the cause is unclear.\n");
+    s.push_str("Investigate systematically before changing anything.\n\n");
+    s.push_str("## When to use it\n\n");
+    s.push_str("- A feature that used to work has stopped working\n");
+    s.push_str("- An error is occurring but the cause is not obvious\n");
+    s.push_str("- Behaviour is inconsistent or hard to reproduce\n");
+    s.push_str("- You are about to guess at a fix — stop and use this skill instead\n\n");
+    s.push_str("## Process\n\n");
+    s.push_str("### 1. Reproduce it\n\n");
+    s.push_str("Before reading any code, confirm you can reproduce the problem reliably.\n");
+    s.push_str("Write down the exact steps, inputs, and observed output.\n\n");
+    s.push_str("### 2. Read the error\n\n");
+    s.push_str("Read the full error message, stack trace, or log output carefully.\n");
+    s.push_str("Do not skim. The answer is often in the part that looks least important.\n\n");
+    s.push_str("### 3. Identify the layer\n\n");
+    s.push_str("Narrow down which layer the problem is in:\n\n");
+    s.push_str("- UI / component\n");
+    s.push_str("- State / data flow\n");
+    s.push_str("- API / service call\n");
+    s.push_str("- Backend / business logic\n");
+    s.push_str("- Database / persistence\n");
+    s.push_str("- Build / config / environment\n\n");
+    s.push_str("### 4. Form a hypothesis\n\n");
+    s.push_str("State your hypothesis clearly before looking at code:\n\n");
+    s.push_str("> \"I think the problem is X because Y.\"\n\n");
+    s.push_str("If you cannot state a hypothesis, keep reading the error output.\n\n");
+    s.push_str("### 5. Verify — do not guess\n\n");
+    s.push_str("Find the specific line or condition that proves or disproves the hypothesis.\n");
+    s.push_str("Do not make a change until you can point to the root cause.\n\n");
+    s.push_str("### 6. Fix minimally\n\n");
+    s.push_str("Make the smallest change that fixes the root cause.\n");
+    s.push_str("Do not refactor while fixing — that introduces new risk.\n");
+    s.push_str("Confirm the fix by reproducing the original steps again.\n\n");
+    s.push_str("## Rules\n\n");
+    s.push_str("- Never change code to \"see if it helps\" — changes must be hypothesis-driven\n");
+    s.push_str("- If you touch more than 3 files to fix one bug, stop and reassess\n");
+    s.push_str("- If a fix introduces a new problem, revert it and re-diagnose\n");
+    s.push_str("- Log significant bugs and their root cause in docs/DECISIONS.md if relevant\n");
+    s
+}
+
+fn skill_frontend() -> String {
+    let mut s = String::new();
+    s.push_str("# Frontend Rules\n\n");
+    s.push_str("Applies to any project with a user interface: web, mobile, desktop.\n");
+    s.push_str("Covers component design, API layering, state management, and TypeScript practices.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 1. No Inline Anything [MUST]\n\n");
+    s.push_str("Inline styles, inline colors, inline fonts — all forbidden.\n\n");
+    s.push_str("**MUST create before writing the first component:**\n\n");
+    s.push_str("```\n");
+    s.push_str("src/theme/\n");
+    s.push_str("  colors.ts\n");
+    s.push_str("  typography.ts\n");
+    s.push_str("  spacing.ts\n");
+    s.push_str("  index.ts\n");
+    s.push_str("```\n\n");
+    s.push_str("Every component imports from the theme. No exceptions.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 2. Intentional Design [MUST]\n\n");
+    s.push_str("Every visual decision must be intentional.\n\n");
+    s.push_str("**MUST:**\n");
+    s.push_str("- Before writing a single component, define the visual direction in one sentence.\n");
+    s.push_str("  (\"Dense developer tool, dark, monospace-heavy\" is enough.)\n");
+    s.push_str("- Commit to that direction. Do not drift toward safe/generic mid-implementation.\n\n");
+    s.push_str("**SHOULD:**\n");
+    s.push_str("- Avoid defaulting to the same palette and component patterns across every project.\n");
+    s.push_str("- When no design brief is given, ask for one.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 3. Theme Before Components [MUST]\n\n");
+    s.push_str("Strict order:\n");
+    s.push_str("1. Define theme tokens (colors, typography, spacing)\n");
+    s.push_str("2. Build primitive components (Button, Text, Input) using tokens\n");
+    s.push_str("3. Build feature components on top of primitives\n\n");
+    s.push_str("Never skip step 1 or 2 to get to step 3 faster.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 4. Component Granularity [MUST]\n\n");
+    s.push_str("One component, one responsibility. A component that fetches AND renders,\n");
+    s.push_str("or manages form state AND displays results, must be split.\n\n");
+    s.push_str("Page-level components are thin composers — no logic, only layout and composition.\n\n");
+    s.push_str("```\n");
+    s.push_str("features/UserProfile/\n");
+    s.push_str("  UserProfilePage.tsx     ← route entry, composes below\n");
+    s.push_str("  UserProfileHeader.tsx\n");
+    s.push_str("  UserProfileStats.tsx\n");
+    s.push_str("  useUserProfile.ts       ← all data fetching and state\n");
+    s.push_str("  userProfile.types.ts\n");
+    s.push_str("```\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 5. API Layer Separation [MUST]\n\n");
+    s.push_str("Network calls are never made directly inside components.\n\n");
+    s.push_str("```\n");
+    s.push_str("services/userService.ts   ← API calls only\n");
+    s.push_str("hooks/useUser.ts          ← wraps service + React Query\n");
+    s.push_str("components/UserCard.tsx   ← calls hook, renders state\n");
+    s.push_str("```\n\n");
+    s.push_str("Components call hooks. Hooks call services. Services call the network. Nothing skips a layer.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 6. State Management [MUST]\n\n");
+    s.push_str("Server state uses React Query, SWR, or RTK Query.\n");
+    s.push_str("Never manually manage loading/error/data with three separate `useState` calls.\n\n");
+    s.push_str("Global client state uses one solution per project.\n");
+    s.push_str("Mixing solutions requires a documented decision.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 7. TypeScript Strictness [MUST]\n\n");
+    s.push_str("`strict: true` in `tsconfig.json`. Non-negotiable.\n\n");
+    s.push_str("`any` is forbidden. Use `unknown` and narrow it.\n\n");
+    s.push_str("`as` type assertions and non-null assertions (`!`) require an inline comment\n");
+    s.push_str("explaining why the type system cannot infer this:\n\n");
+    s.push_str("```typescript\n");
+    s.push_str("// API returns correct shape but generated types don't reflect optional fields yet\n");
+    s.push_str("const user = data as User\n");
+    s.push_str("```\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 8. Text Management [SHOULD]\n\n");
+    s.push_str("No hardcoded strings scattered across components.\n");
+    s.push_str("Maintain a centralised strings/copy file from day one, even if not localising.\n\n");
+    s.push_str("```\n");
+    s.push_str("src/constants/strings.ts\n");
+    s.push_str("```\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## 9. Component Testing [SHOULD]\n\n");
+    s.push_str("Component tests use React Testing Library. Test behaviour, not implementation:\n\n");
+    s.push_str("```typescript\n");
+    s.push_str("// Correct — tests what the user sees\n");
+    s.push_str("expect(screen.getByText('Welcome, Alice')).toBeInTheDocument()\n\n");
+    s.push_str("// Forbidden — tests implementation detail\n");
+    s.push_str("expect(wrapper.find('UserGreeting').prop('name')).toBe('Alice')\n");
+    s.push_str("```\n\n");
+    s.push_str("Hook logic is tested with `renderHook`.\n");
+    s.push_str("Service functions are unit tested independently with mocked fetch/axios.\n\n");
+    s.push_str("Do not test that a component calls a function — test what changes in the UI when it does.\n");
+    s
+}
+
 // ── Unit tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1256,26 +1426,6 @@ mod tests {
         assert_eq!(
             add_ons_bullets(&["Supabase".to_string(), "Tailwind CSS".to_string()]),
             "- Supabase\n- Tailwind CSS\n",
-        );
-    }
-
-    // add_ons_inline ───────────────────────────────────────────────────────────
-
-    #[test]
-    fn add_ons_inline_empty() {
-        assert_eq!(add_ons_inline(&[]), "");
-    }
-
-    #[test]
-    fn add_ons_inline_single() {
-        assert_eq!(add_ons_inline(&["Stripe".to_string()]), " · Stripe");
-    }
-
-    #[test]
-    fn add_ons_inline_multiple() {
-        assert_eq!(
-            add_ons_inline(&["Supabase".to_string(), "Stripe".to_string()]),
-            " · Supabase, Stripe",
         );
     }
 

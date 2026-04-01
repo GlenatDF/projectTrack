@@ -64,6 +64,9 @@ fn generate_db_password() -> String {
 
 // ── File templates ────────────────────────────────────────────────────────────
 
+// Versions are pinned exactly (no ^ or ~).
+// Update these when refreshing the template — they are the versions that will be
+// installed and committed to package-lock.json on first `npm install`.
 const TMPL_PACKAGE_JSON: &str = r#"{
   "name": "{{slug}}",
   "version": "0.1.0",
@@ -75,24 +78,28 @@ const TMPL_PACKAGE_JSON: &str = r#"{
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "^15",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2"
+    "next": "15.1.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "@supabase/ssr": "0.5.2",
+    "@supabase/supabase-js": "2.46.2"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "tailwindcss": "^4",
-    "@tailwindcss/postcss": "^4",
-    "eslint": "^9",
-    "eslint-config-next": "^15"
+    "typescript": "5.7.2",
+    "@types/node": "20.17.6",
+    "@types/react": "19.0.4",
+    "@types/react-dom": "19.0.2",
+    "tailwindcss": "4.0.6",
+    "@tailwindcss/postcss": "4.0.6",
+    "eslint": "9.17.0",
+    "eslint-config-next": "15.1.0"
   }
 }
 "#;
+
+// Force exact versions on any future `npm install --save`.
+// Do not add ^ or ~ to package.json without a documented reason.
+const TMPL_NPMRC: &str = "save-exact=true\n";
 
 const TMPL_TSCONFIG: &str = r#"{
   "compilerOptions": {
@@ -298,6 +305,42 @@ yarn-error.log*
 next-env.d.ts
 "#;
 
+// Requires package-lock.json to be committed (enforced by npm ci).
+// dependency-review runs on PRs; it requires GitHub Advanced Security for private repos
+// but is free for all public repos.
+const TMPL_CI_WORKFLOW: &str = r#"# CI — runs on every push to main and on all pull requests.
+# Requires package-lock.json to be committed. Run `npm install` locally and
+# commit package-lock.json before your first push, or this workflow will fail.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm run build
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+"#;
+
 fn readme_template(name: &str, description: &str, slug: &str) -> String {
     format!(
         r#"# {name}
@@ -316,10 +359,11 @@ fn readme_template(name: &str, description: &str, slug: &str) -> String {
 ```bash
 cd {slug}
 npm install
-
-# Copy and fill in your Supabase credentials
 cp .env.example .env.local
 ```
+
+> **Commit `package-lock.json`** before your first push — it records the exact versions
+> installed and is required by CI (`npm ci` reads from it strictly).
 
 Edit `.env.local` with values from your Supabase project's **Settings → API** page, then:
 
@@ -370,6 +414,7 @@ pub fn create_local_files(
     let a = |t: &str| apply(t, name, slug, desc);
 
     write_file(project_dir, "package.json",          &a(TMPL_PACKAGE_JSON))?;
+    write_file(project_dir, ".npmrc",                 &a(TMPL_NPMRC))?;
     write_file(project_dir, "tsconfig.json",          &a(TMPL_TSCONFIG))?;
     write_file(project_dir, "next.config.ts",         &a(TMPL_NEXT_CONFIG))?;
     write_file(project_dir, "postcss.config.mjs",     &a(TMPL_POSTCSS))?;
@@ -386,6 +431,7 @@ pub fn create_local_files(
     write_file(project_dir, "lib/supabase/middleware.ts", &a(TMPL_SUPABASE_MIDDLEWARE))?;
     write_file(project_dir, "components/.gitkeep",    "")?;
     write_file(project_dir, "public/.gitkeep",        "")?;
+    write_file(project_dir, ".github/workflows/ci.yml", &a(TMPL_CI_WORKFLOW))?;
     Ok(())
 }
 
@@ -675,5 +721,44 @@ pub fn scaffold_project(req: ScaffoldRequest) -> ScaffoldResult {
         supabase_project_id: supabase_id,
         supabase_db_password: supabase_pass,
         steps,
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn create_local_files_generates_security_defaults() {
+        let dir = std::env::temp_dir().join("launchpad_scaffold_test");
+        let _ = fs::remove_dir_all(&dir); // clean up any previous run
+
+        create_local_files(&dir, "Test App", "test-app", "A test project").unwrap();
+
+        // Versions are pinned (no ^ or ~)
+        let pkg = fs::read_to_string(dir.join("package.json")).unwrap();
+        assert!(!pkg.contains("\"^"), "package.json should not have ^ ranges");
+        assert!(!pkg.contains("\"~"), "package.json should not have ~ ranges");
+        assert!(pkg.contains("\"15.1.0\""), "next should be pinned to 15.1.0");
+        assert!(pkg.contains("\"19.0.0\""), "react should be pinned");
+
+        // .npmrc forces exact saves
+        let npmrc = fs::read_to_string(dir.join(".npmrc")).unwrap();
+        assert!(npmrc.contains("save-exact=true"), ".npmrc should contain save-exact=true");
+
+        // CI workflow is present and uses npm ci
+        let ci = fs::read_to_string(dir.join(".github/workflows/ci.yml")).unwrap();
+        assert!(ci.contains("npm ci"), "CI should use npm ci");
+        assert!(ci.contains("npm audit"), "CI should run npm audit");
+        assert!(ci.contains("dependency-review-action"), "CI should include dependency-review");
+
+        // README notes the lockfile
+        let readme = fs::read_to_string(dir.join("README.md")).unwrap();
+        assert!(readme.contains("package-lock.json"), "README should mention package-lock.json");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
