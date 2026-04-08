@@ -8,7 +8,7 @@ import {
 import type { Project, ProjectScan } from '../lib/types';
 import {
   getProject, getProjectScans, scanProject, updateProject,
-  updateProjectStatus, deleteProject, openFolder, openInVscode,
+  updateProjectStatus, deleteProject, archiveGithubRepo, openFolder, openInVscode,
   relinkRepoPath, validateRepoPath,
   openInTerminal, openInIterm, runClaudeBootstrap,
   copyBootstrapPrompt,
@@ -25,12 +25,14 @@ import { Modal } from '../components/ui/Modal';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { relativeTime, shortHash } from '../lib/utils';
 import { computeHealth } from '../lib/health';
-import { ClaudeSessionView } from '../components/ClaudeSessionView';
-import { AuditsView } from '../components/audits/AuditsView';
-import { SkillsView } from '../components/SkillsView';
+import { ClaudeSessionView } from '../features/track/components/ClaudeSessionView';
+import { AuditsView } from '../features/track/components/audits/AuditsView';
+import { SkillsView } from '../features/track/components/SkillsView';
+import { ProjectTasksView } from '../features/track/tasks/ProjectTasksView';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'tasks',    label: 'Tasks' },
   { key: 'session',  label: 'Session' },
   { key: 'audits',   label: 'Audits' },
   { key: 'skills',   label: 'Skills' },
@@ -56,7 +58,9 @@ export default function ProjectDetail() {
   const [savingNotes, setSavingNotes] = useState(false);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [archiveGithub, setArchiveGithub] = useState(false);
+  const [deletingStep, setDeletingStep] = useState<'archiving' | 'deleting' | null>(null);
+  const deleting = deletingStep !== null;
 
   const [showRelink, setShowRelink] = useState(false);
   const [relinkPath, setRelinkPath] = useState('');
@@ -132,12 +136,16 @@ export default function ProjectDetail() {
   async function handleDelete() {
     if (!project) return;
     try {
-      setDeleting(true);
+      if (archiveGithub) {
+        setDeletingStep('archiving');
+        await archiveGithubRepo(projectId);
+      }
+      setDeletingStep('deleting');
       await deleteProject(projectId);
       navigate('/');
     } catch (e) {
       setActionError(String(e));
-      setDeleting(false);
+      setDeletingStep(null);
       setShowDeleteConfirm(false);
     }
   }
@@ -326,8 +334,15 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Tasks tab — owns its own flex height, independent of document scroll */}
+      <div className={activeTab === 'tasks' ? 'flex-1 flex flex-col overflow-hidden min-h-0' : 'hidden'}>
+        {visitedTabs.has('tasks') && (
+          <ProjectTasksView projectId={String(projectId)} repoPath={project.local_repo_path ?? ''} />
+        )}
+      </div>
+
+      {/* All other tabs — document scroll */}
+      <div className={activeTab !== 'tasks' ? 'flex-1 overflow-y-auto' : 'hidden'}>
         <div className="px-5 py-4 max-w-5xl mx-auto">
           {/* Inline alerts */}
           {actionError && (
@@ -345,7 +360,6 @@ export default function ProjectDetail() {
             </div>
           )}
 
-          {/* Tab panels: mount on first visit, then CSS hide */}
           <div className={activeTab === 'session' ? 'block' : 'hidden'}>
             {visitedTabs.has('session') && (
               <ClaudeSessionView project={project} />
@@ -690,7 +704,7 @@ export default function ProjectDetail() {
       {/* Delete confirmation modal */}
       <Modal
         open={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
+        onClose={() => { setShowDeleteConfirm(false); setArchiveGithub(false); }}
         title="Delete Project"
         footer={
           <>
@@ -700,7 +714,7 @@ export default function ProjectDetail() {
             <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}
               className="bg-red-600 hover:bg-red-500 text-white border-transparent">
               {deleting && <Loader2 size={11} className="animate-spin" />}
-              Delete
+              {deletingStep === 'archiving' ? 'Archiving…' : deletingStep === 'deleting' ? 'Deleting…' : 'Delete'}
             </Button>
           </>
         }
@@ -709,6 +723,23 @@ export default function ProjectDetail() {
           Delete <span className="text-slate-100 font-medium">"{project.name}"</span>?
         </p>
         <p className="text-xs text-slate-500">All scan history will also be removed. This cannot be undone.</p>
+        {project.local_repo_path && (
+          <label className="flex items-start gap-2 mt-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={archiveGithub}
+              onChange={e => setArchiveGithub(e.target.checked)}
+              disabled={deleting}
+              className="mt-0.5 accent-violet-500"
+            />
+            <div>
+              <span className="text-xs text-slate-300">Archive GitHub repo</span>
+              <span className="block text-xs text-slate-500 mt-0.5">
+                Renames to <code className="text-slate-400">{project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '')}-archived-{new Date().toISOString().slice(0, 7)}</code> and marks as archived on GitHub
+              </span>
+            </div>
+          </label>
+        )}
       </Modal>
 
       {/* Relink modal */}

@@ -20,7 +20,7 @@ import { Button } from '../components/ui/Button';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { relativeTime, projectTimestampLabel, loadPref, savePref } from '../lib/utils';
 import { computeHealth, isOlderThanDays } from '../lib/health';
-import { NewProjectWizard } from '../components/NewProjectWizard';
+import { NewProjectWizard } from '../features/launchpad/components/NewProjectWizard';
 
 type ActiveFilter = 'all' | 'active' | 'paused' | 'done' | 'blocked' | 'dirty';
 const FILTER_OPTIONS: { value: ActiveFilter; label: string }[] = [

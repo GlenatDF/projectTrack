@@ -6,10 +6,10 @@ import {
   ClipboardCopy,
   Loader2,
 } from 'lucide-react';
-import { assemblePlanningPrompt, getProjectPlan, importPlanResponse, runPlanWithClaudeCli } from '../../lib/api';
-import type { AssembledPrompt, ImportPlanResult } from '../../lib/types';
-import { Button } from '../ui/Button';
-import { Modal } from '../ui/Modal';
+import { assemblePlanningPrompt, getProjectPlan, importPlanResponse, runPlanWithClaudeCli } from '../../../../lib/api';
+import type { AssembledPrompt, ImportPlanResult } from '../../../../lib/types';
+import { Button } from '../../../../components/ui/Button';
+import { Modal } from '../../../../components/ui/Modal';
 
 type Step =
   | 'assembling'

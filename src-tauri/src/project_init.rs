@@ -40,6 +40,66 @@ pub fn emit_progress(app: &tauri::AppHandle, step: &str, label: &str, status: &s
 
 fn default_template_mode() -> String { "standard".to_string() }
 
+/// Normalise the project level to one of three canonical values.
+///
+/// Accepts old names for backwards compatibility:
+///   "small"  → "bare_bones"
+///   "full"   → "fuller"
+/// Any other string (including "") → "standard"
+pub fn normalise_level(s: &str) -> &'static str {
+    match s {
+        "bare_bones" | "small" => "bare_bones",
+        "fuller"     | "full"  => "fuller",
+        _                      => "standard",
+    }
+}
+
+/// Returns the relative file paths that would be created for the given level.
+///
+/// This is a pure function — no I/O — used in tests and by the future
+/// `scaffold_from_github_template` command to know what extras to write after clone.
+#[allow(dead_code)]
+pub fn file_paths_for_level(level: &str, with_skills: bool) -> Vec<&'static str> {
+    let level = normalise_level(level);
+    let mut paths: Vec<&'static str> = vec![
+        "CLAUDE.md",
+        "README.md",
+        "docs/BRIEF.md",
+        "docs/TASKS.md",
+        "docs/STAGE.md",
+    ];
+    if level != "bare_bones" {
+        paths.extend_from_slice(&[
+            "docs/REQUIREMENTS.md",
+            "docs/TECHNICAL.md",
+            "docs/DECISIONS.md",
+            "docs/SESSIONS.md",
+            "docs/RISKS.md",
+        ]);
+    }
+    if level == "fuller" {
+        paths.push("docs/ARCHITECTURE.md");
+    }
+    if with_skills {
+        paths.extend_from_slice(&[
+            ".claude/skills/feature-chunking/SKILL.md",
+            ".claude/skills/testing-discipline/SKILL.md",
+        ]);
+        if level != "bare_bones" {
+            paths.extend_from_slice(&[
+                ".claude/skills/project-kickoff/SKILL.md",
+                ".claude/skills/debug/SKILL.md",
+                ".claude/skills/ui-readability/SKILL.md",
+                ".claude/skills/frontend/SKILL.md",
+            ]);
+        }
+        if level == "fuller" {
+            paths.push(".claude/skills/performance/SKILL.md");
+        }
+    }
+    paths
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ProjectInitRequest {
     pub name: String,
@@ -53,7 +113,8 @@ pub struct ProjectInitRequest {
     pub ui_style: String,
     pub create_git_repo: bool,
     pub create_claude_skills: bool,
-    /// "small" | "standard" | "full" — defaults to "standard" if omitted
+    /// "bare_bones" | "standard" | "fuller" — defaults to "standard" if omitted.
+    /// Old values "small" and "full" are still accepted and normalised.
     #[serde(default = "default_template_mode")]
     pub template_mode: String,
 }
@@ -84,7 +145,7 @@ pub fn write_docs_and_skills(
 
     emit(app, "docs", "Generating markdown docs", "running");
     let today = today_iso();
-    let mode = req.template_mode.as_str();
+    let level = normalise_level(req.template_mode.as_str());
     let slug = slugify(&req.name);
     let stack = template_label(&req.starter_template);
     let app_type = project_type_label(&req.project_type);
@@ -101,25 +162,30 @@ pub fn write_docs_and_skills(
             // Legacy lowercase tokens (backwards compat)
             .replace("{{project_name}}", &req.name)
             .replace("{{project_description}}", &req.description),
-        _ => tmpl_claude_md(req, mode),
+        _ => tmpl_claude_md(req, level),
     };
 
-    // Base docs — all modes
+    // Base docs — all levels
     let mut doc_list: Vec<(&str, String)> = vec![
         ("CLAUDE.md",      claude_md),
-        ("README.md",      tmpl_readme(req, mode)),
-        ("docs/BRIEF.md",  tmpl_brief(req)),
-        ("docs/TASKS.md",  tmpl_tasks(req, mode)),
-        ("docs/STAGE.md",  tmpl_project_stage(&today)),
+        ("README.md",      tmpl_readme(req, level)),
+        ("docs/BRIEF.md",  tmpl_brief(req, level)),
+        ("docs/TASKS.md",  tmpl_tasks(req, level)),
+        ("docs/STAGE.md",  tmpl_project_stage(&today, level)),
     ];
 
-    // Standard + Full docs
-    if mode != "small" {
+    // Standard + fuller docs
+    if level != "bare_bones" {
         doc_list.push(("docs/REQUIREMENTS.md", tmpl_prd(req, &today)));
         doc_list.push(("docs/TECHNICAL.md",    tmpl_tech_spec(req, &today)));
         doc_list.push(("docs/DECISIONS.md",    tmpl_decision_log(req, &today)));
         doc_list.push(("docs/SESSIONS.md",     tmpl_session_log()));
         doc_list.push(("docs/RISKS.md",        tmpl_risks(req)));
+    }
+
+    // Fuller-only docs
+    if level == "fuller" {
+        doc_list.push(("docs/ARCHITECTURE.md", tmpl_architecture(req)));
     }
 
     for (name, content) in &doc_list {
@@ -134,17 +200,23 @@ pub fn write_docs_and_skills(
     if req.create_claude_skills {
         emit(app, "skills", "Generating Claude skills", "running");
 
-        // Small mode: minimal skill set
-        // Standard / Full: full skill set
+        // Base skills — all levels
         let mut skill_list: Vec<(&str, String)> = vec![
             (".claude/skills/feature-chunking/SKILL.md",   skill_feature_chunking()),
             (".claude/skills/testing-discipline/SKILL.md", skill_testing_discipline()),
         ];
-        if mode != "small" {
+
+        // Standard + fuller skills
+        if level != "bare_bones" {
             skill_list.push((".claude/skills/project-kickoff/SKILL.md",  skill_project_kickoff()));
             skill_list.push((".claude/skills/debug/SKILL.md",            skill_debug()));
             skill_list.push((".claude/skills/ui-readability/SKILL.md",   skill_ui_readability()));
             skill_list.push((".claude/skills/frontend/SKILL.md",         skill_frontend()));
+        }
+
+        // Fuller-only skills
+        if level == "fuller" {
+            skill_list.push((".claude/skills/performance/SKILL.md", skill_performance()));
         }
 
         for (path, content) in &skill_list {
@@ -434,7 +506,7 @@ fn tmpl_claude_md(r: &ProjectInitRequest, mode: &str) -> String {
     s.push_str("1. `docs/STAGE.md` — where the project is right now\n");
     s.push_str("2. `docs/BRIEF.md` — what the project is and why it exists\n");
     s.push_str("3. `docs/TASKS.md` — what needs doing next\n");
-    if mode != "small" {
+    if mode != "bare_bones" {
         s.push_str("\nIf you need more context, also read:\n\n");
         s.push_str("4. `docs/REQUIREMENTS.md` — what we are building\n");
         s.push_str("5. `docs/TECHNICAL.md` — how it is built\n");
@@ -464,7 +536,7 @@ fn tmpl_claude_md(r: &ProjectInitRequest, mode: &str) -> String {
     s.push_str("**At the end of each session:**\n\n");
     s.push_str("- Update docs/TASKS.md: mark completed tasks done, add anything newly discovered\n");
     s.push_str("- Update docs/STAGE.md if the phase or status has changed\n");
-    if mode != "small" {
+    if mode != "bare_bones" {
         s.push_str("- Log significant decisions to docs/DECISIONS.md with context and rationale\n");
         s.push_str("- Add a brief entry to docs/SESSIONS.md if useful\n");
     }
@@ -478,7 +550,7 @@ fn tmpl_claude_md(r: &ProjectInitRequest, mode: &str) -> String {
     s.push_str("| docs/BRIEF.md | What this project is and why it exists |\n");
     s.push_str("| docs/TASKS.md | Living task list — keep this current |\n");
     s.push_str("| docs/STAGE.md | Current stage and what has been completed |\n");
-    if mode != "small" {
+    if mode != "bare_bones" {
         s.push_str("| docs/REQUIREMENTS.md | Feature requirements and acceptance criteria |\n");
         s.push_str("| docs/TECHNICAL.md | Architecture, stack, and technical decisions |\n");
         s.push_str("| docs/DECISIONS.md | Record of key decisions with context and rationale |\n");
@@ -540,12 +612,12 @@ fn tmpl_claude_md(r: &ProjectInitRequest, mode: &str) -> String {
         s.push_str("### Skills in this project\n\n");
         s.push_str("| Skill | When to use it |\n");
         s.push_str("|-------|----------------|\n");
-        if mode != "small" {
+        if mode != "bare_bones" {
             s.push_str("| `project-kickoff` | First session on the project — review docs, find gaps, establish a plan |\n");
         }
         s.push_str("| `feature-chunking` | Before any non-trivial feature — plan chunks first, implement one at a time |\n");
         s.push_str("| `testing-discipline` | When reporting the outcome of any implementation chunk |\n");
-        if mode != "small" {
+        if mode != "bare_bones" {
             s.push_str("| `debug` | When something is broken and two attempts have not fixed it |\n");
             s.push_str("| `ui-readability` | When building or reviewing UI components with colour, contrast, or hierarchy concerns |\n");
             s.push_str("| `frontend` | Any project with a user interface — component structure, API layer, TypeScript rules |\n");
@@ -583,9 +655,36 @@ fn tmpl_claude_md(r: &ProjectInitRequest, mode: &str) -> String {
     s
 }
 
-fn tmpl_brief(r: &ProjectInitRequest) -> String {
+fn tmpl_brief(r: &ProjectInitRequest, mode: &str) -> String {
     let mut s = String::new();
     s.push_str(&format!("# Project Brief — {}\n\n", r.name));
+
+    if mode == "bare_bones" {
+        s.push_str("---\n\n");
+
+        s.push_str("## In one sentence\n\n");
+        s.push_str(&format!("{}\n\n", opt(&r.description, "_Write a single sentence that describes this project clearly._")));
+
+        s.push_str("## What is this project?\n\n");
+        s.push_str(&format!("{}\n\n", opt(&r.description, "_What does it do? Why does it exist? What problem does it solve?_")));
+        s.push_str(&format!("**Type:** {}  \n", project_type_label(&r.project_type)));
+        s.push_str(&format!("**Template base:** {}  \n\n", template_label(&r.starter_template)));
+
+        s.push_str("## Goal\n\n");
+        s.push_str(&format!("{}\n\n", opt(&r.main_goal, "_The single most important outcome this project must deliver._")));
+
+        s.push_str("## What does it NOT do?\n\n");
+        s.push_str("_Define the scope boundary — what is explicitly out of scope for this version._\n\n");
+
+        if !r.constraints.trim().is_empty() {
+            s.push_str("## Constraints\n\n");
+            s.push_str(&format!("{}\n\n", r.constraints));
+        }
+
+        return s;
+    }
+
+    // Standard / fuller — full template
     s.push_str("A concise overview of what this project is, why it exists, and what it must achieve.\n\n");
     s.push_str("---\n\n");
 
@@ -758,7 +857,7 @@ fn tmpl_tasks(r: &ProjectInitRequest, mode: &str) -> String {
     s.push_str("- `[-]` Skipped or will not do\n\n---\n\n");
 
     s.push_str("## Phase 1 — Setup and planning\n\n");
-    if mode == "small" {
+    if mode == "bare_bones" {
         s.push_str("- [ ] Read docs/BRIEF.md and fill in the description, goal, and scope\n");
     } else {
         s.push_str("- [ ] Read all generated docs and fill in the gaps (docs/BRIEF.md, docs/REQUIREMENTS.md, docs/TECHNICAL.md)\n");
@@ -772,27 +871,36 @@ fn tmpl_tasks(r: &ProjectInitRequest, mode: &str) -> String {
     }
     s.push('\n');
 
-    s.push_str("## Phase 2 — Core build\n\n");
-    s.push_str("_Break each feature into the smallest useful steps. Add tasks as they become clear._\n\n");
-    s.push_str("- [ ] _[Feature 1 — step 1]_\n");
-    s.push_str("- [ ] _[Feature 1 — step 2]_\n");
-    s.push_str("- [ ] _[Feature 2 — step 1]_\n\n");
+    if mode == "bare_bones" {
+        s.push_str("## Build tasks\n\n");
+        s.push_str("Add tasks here as the work becomes clear. Break each feature into the smallest useful step.\n\n");
+    } else {
+        s.push_str("## Phase 2 — Core build\n\n");
+        s.push_str("_Break each feature into the smallest useful steps. Add tasks as they become clear._\n\n");
+        s.push_str("- [ ] _[Feature 1 — step 1]_\n");
+        s.push_str("- [ ] _[Feature 1 — step 2]_\n");
+        s.push_str("- [ ] _[Feature 2 — step 1]_\n\n");
+    }
 
     s.push_str("## Phase 3 — Polish and ship\n\n");
-    if mode != "small" {
+    if mode != "bare_bones" {
         s.push_str("- [ ] Verify all requirements from docs/REQUIREMENTS.md are met\n");
     }
     s.push_str("- [ ] Test primary and secondary user flows end-to-end\n");
     s.push_str("- [ ] Review readability, accessibility, and error states\n");
     s.push_str("- [ ] Update README.md with accurate setup and usage instructions\n");
-    if mode != "small" {
+    if mode != "bare_bones" {
         s.push_str("- [ ] Confirm docs/DECISIONS.md and docs/SESSIONS.md are up to date\n");
     }
     s.push('\n');
 
     s.push_str("---\n\n## Backlog\n\n");
-    s.push_str("_Ideas and future tasks that are not yet prioritised:_\n\n");
-    s.push_str("- _[Idea]_\n");
+    if mode == "bare_bones" {
+        s.push_str("_Add ideas and future tasks as they come up._\n");
+    } else {
+        s.push_str("_Ideas and future tasks that are not yet prioritised:_\n\n");
+        s.push_str("- _[Idea]_\n");
+    }
 
     s
 }
@@ -897,7 +1005,7 @@ fn tmpl_risks(r: &ProjectInitRequest) -> String {
     s
 }
 
-fn tmpl_project_stage(today: &str) -> String {
+fn tmpl_project_stage(today: &str, level: &str) -> String {
     let mut s = String::new();
     s.push_str("# Project Stage\n\n");
     s.push_str("Track the current phase of the project and what has been completed.\n");
@@ -907,12 +1015,22 @@ fn tmpl_project_stage(today: &str) -> String {
     s.push_str("**Target:** Setup complete and core build ready to begin\n\n");
     s.push_str("---\n\n## What has been done\n\n");
     s.push_str("- Project initialised with base documentation\n");
-    s.push_str("- CLAUDE.md, docs/BRIEF.md, docs/TASKS.md, and supporting docs generated\n\n");
+    if level == "bare_bones" {
+        s.push_str("- CLAUDE.md, docs/BRIEF.md, docs/TASKS.md, docs/STAGE.md generated\n\n");
+    } else {
+        s.push_str("- CLAUDE.md, docs/BRIEF.md, docs/TASKS.md, and supporting docs generated\n\n");
+    }
     s.push_str("## In progress\n\n");
     s.push_str("- Reviewing and filling in project documentation\n");
-    s.push_str("- Confirming architecture and technology choices\n\n");
-    s.push_str("## Up next\n\n");
-    s.push_str("- Complete docs/TECHNICAL.md and docs/REQUIREMENTS.md\n");
+    if level != "bare_bones" {
+        s.push_str("- Confirming architecture and technology choices\n");
+    }
+    s.push_str("\n## Up next\n\n");
+    if level == "bare_bones" {
+        s.push_str("- Fill in docs/BRIEF.md — define goal, audience, and scope boundary\n");
+    } else {
+        s.push_str("- Complete docs/TECHNICAL.md and docs/REQUIREMENTS.md\n");
+    }
     s.push_str("- Begin Phase 1 tasks in docs/TASKS.md\n\n");
     s.push_str("## Blockers\n\n");
     s.push_str("- _None currently — update this if anything blocks progress_\n\n");
@@ -929,6 +1047,80 @@ fn tmpl_project_stage(today: &str) -> String {
     s
 }
 
+
+// ── Fuller-only templates ──────────────────────────────────────────────────────
+
+fn tmpl_architecture(r: &ProjectInitRequest) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("# Architecture — {}\n\n", r.name));
+    s.push_str("High-level overview of how the system is structured.\n");
+    s.push_str("Keep this updated as major decisions are made.\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## Purpose\n\n");
+    s.push_str("_What problem does this system solve and who uses it?_\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## Key components\n\n");
+    s.push_str("| Component | Responsibility |\n");
+    s.push_str("|-----------|----------------|\n");
+    s.push_str("| _[Name]_ | _[What it does]_ |\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## Data flow\n\n");
+    s.push_str("_Describe how data moves through the system — a short prose description or a\n");
+    s.push_str("simple ASCII diagram is fine._\n\n");
+    s.push_str("```\n");
+    s.push_str("User → [Frontend] → [API] → [Database]\n");
+    s.push_str("```\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## External dependencies\n\n");
+    s.push_str("Third-party services and APIs this system depends on.\n\n");
+    s.push_str("| Service | Purpose | Notes |\n");
+    s.push_str("|---------|---------|-------|\n");
+    s.push_str("| _[Service]_ | _[Why]_ | — |\n\n");
+    s.push_str("---\n\n");
+    s.push_str("## Key design decisions\n\n");
+    s.push_str("_Cross-reference detailed ADRs in docs/DECISIONS.md._\n\n");
+    s.push_str("- _[Decision and brief rationale]_\n");
+    s
+}
+
+fn skill_performance() -> String {
+    let mut s = String::new();
+    s.push_str("# Performance\n\n");
+    s.push_str("## Purpose\n\n");
+    s.push_str("Use this skill when the app is slow, unresponsive, or consuming excessive resources.\n");
+    s.push_str("Profile before optimising — never guess at the bottleneck.\n\n");
+    s.push_str("## When to use it\n\n");
+    s.push_str("- User reports slowness or jank\n");
+    s.push_str("- A page or operation is visibly slow\n");
+    s.push_str("- Build times or startup times have regressed\n");
+    s.push_str("- You are about to pre-optimise — stop and measure first\n\n");
+    s.push_str("## Process\n\n");
+    s.push_str("### 1. Measure first\n\n");
+    s.push_str("Identify the specific operation that is slow and put a number on it.\n");
+    s.push_str("Do not optimise without a baseline.\n\n");
+    s.push_str("### 2. Find the bottleneck\n\n");
+    s.push_str("Use the appropriate profiling tool:\n\n");
+    s.push_str("- **Browser:** DevTools Performance tab, Lighthouse, Web Vitals\n");
+    s.push_str("- **Node / server:** `--prof`, clinic.js, or simple `console.time` spans\n");
+    s.push_str("- **Database:** `EXPLAIN ANALYZE`, slow query log\n");
+    s.push_str("- **Rust/backend:** `cargo flamegraph`, criterion benchmarks\n\n");
+    s.push_str("### 3. Fix the right layer\n\n");
+    s.push_str("| Symptom | Likely cause | Approach |\n");
+    s.push_str("|---------|-------------|----------|\n");
+    s.push_str("| Slow first load | Large bundle | Code-split, lazy-load, tree-shake |\n");
+    s.push_str("| Janky animations | Render blocking | Move to CSS, use `will-change`, avoid forced layout |\n");
+    s.push_str("| Slow API calls | N+1 queries or missing index | Add index, batch queries, cache |\n");
+    s.push_str("| Re-renders | Missing memo / stable refs | `useMemo`, `useCallback`, component split |\n\n");
+    s.push_str("### 4. Verify the improvement\n\n");
+    s.push_str("Re-run the same measurement. The number must be better.\n");
+    s.push_str("If it is not, revert the change and re-profile.\n\n");
+    s.push_str("## Rules\n\n");
+    s.push_str("- Never optimise without a measurement showing it is needed\n");
+    s.push_str("- Prefer algorithmic improvements over micro-optimisations\n");
+    s.push_str("- Document the before/after numbers in docs/DECISIONS.md\n");
+    s.push_str("- Stop when the bottleneck is gone — do not chase diminishing returns\n");
+    s
+}
 
 fn tmpl_readme(r: &ProjectInitRequest, mode: &str) -> String {
     let slug = slugify(&r.name);
@@ -969,7 +1161,7 @@ fn tmpl_readme(r: &ProjectInitRequest, mode: &str) -> String {
     s.push_str("| [docs/BRIEF.md](docs/BRIEF.md) | What this project is and why it exists |\n");
     s.push_str("| [docs/TASKS.md](docs/TASKS.md) | Current task list |\n");
     s.push_str("| [docs/STAGE.md](docs/STAGE.md) | Current project stage |\n");
-    if mode != "small" {
+    if mode != "bare_bones" {
         s.push_str("| [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | Feature requirements |\n");
         s.push_str("| [docs/TECHNICAL.md](docs/TECHNICAL.md) | Architecture and technical decisions |\n");
         s.push_str("| [docs/DECISIONS.md](docs/DECISIONS.md) | Key decisions and rationale |\n");
@@ -1476,5 +1668,102 @@ mod tests {
     #[test]
     fn template_label_unknown_passthrough() {
         assert_eq!(template_label("unknown"), "unknown");
+    }
+
+    // normalise_level ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn normalise_level_bare_bones_canonical() {
+        assert_eq!(normalise_level("bare_bones"), "bare_bones");
+    }
+
+    #[test]
+    fn normalise_level_small_maps_to_bare_bones() {
+        assert_eq!(normalise_level("small"), "bare_bones");
+    }
+
+    #[test]
+    fn normalise_level_standard_passthrough() {
+        assert_eq!(normalise_level("standard"), "standard");
+    }
+
+    #[test]
+    fn normalise_level_unknown_defaults_to_standard() {
+        assert_eq!(normalise_level(""), "standard");
+        assert_eq!(normalise_level("anything_else"), "standard");
+    }
+
+    #[test]
+    fn normalise_level_fuller_canonical() {
+        assert_eq!(normalise_level("fuller"), "fuller");
+    }
+
+    #[test]
+    fn normalise_level_full_maps_to_fuller() {
+        assert_eq!(normalise_level("full"), "fuller");
+    }
+
+    // file_paths_for_level ─────────────────────────────────────────────────────
+
+    #[test]
+    fn bare_bones_selects_minimal_docs() {
+        let paths = file_paths_for_level("bare_bones", false);
+        assert_eq!(paths.len(), 5, "bare_bones should produce 5 docs");
+        assert!(paths.contains(&"CLAUDE.md"));
+        assert!(paths.contains(&"docs/BRIEF.md"));
+        assert!(!paths.iter().any(|p| p.contains("REQUIREMENTS")), "REQUIREMENTS should not be in bare_bones");
+        assert!(!paths.iter().any(|p| p.contains("ARCHITECTURE")), "ARCHITECTURE should not be in bare_bones");
+    }
+
+    #[test]
+    fn standard_selects_normal_docs() {
+        let paths = file_paths_for_level("standard", false);
+        assert_eq!(paths.len(), 10, "standard should produce 10 docs");
+        assert!(paths.iter().any(|p| p.contains("REQUIREMENTS")));
+        assert!(paths.iter().any(|p| p.contains("DECISIONS")));
+        assert!(!paths.iter().any(|p| p.contains("ARCHITECTURE")), "ARCHITECTURE should not be in standard");
+    }
+
+    #[test]
+    fn fuller_selects_expanded_docs() {
+        let paths = file_paths_for_level("fuller", false);
+        assert_eq!(paths.len(), 11, "fuller should produce 11 docs");
+        assert!(paths.iter().any(|p| p.contains("ARCHITECTURE")));
+    }
+
+    #[test]
+    fn bare_bones_selects_minimal_skills() {
+        let paths = file_paths_for_level("bare_bones", true);
+        let skills: Vec<_> = paths.iter().filter(|p| p.contains(".claude/skills")).collect();
+        assert_eq!(skills.len(), 2, "bare_bones should produce 2 skills");
+    }
+
+    #[test]
+    fn standard_selects_normal_skills() {
+        let paths = file_paths_for_level("standard", true);
+        let skills: Vec<_> = paths.iter().filter(|p| p.contains(".claude/skills")).collect();
+        assert_eq!(skills.len(), 6, "standard should produce 6 skills");
+    }
+
+    #[test]
+    fn fuller_selects_expanded_skills() {
+        let paths = file_paths_for_level("fuller", true);
+        let skills: Vec<_> = paths.iter().filter(|p| p.contains(".claude/skills")).collect();
+        assert_eq!(skills.len(), 7, "fuller should produce 7 skills");
+        assert!(skills.iter().any(|p| p.contains("performance")));
+    }
+
+    #[test]
+    fn old_values_produce_same_paths_as_new() {
+        // "small" and "bare_bones" must be equivalent
+        assert_eq!(
+            file_paths_for_level("small",      true),
+            file_paths_for_level("bare_bones", true),
+        );
+        // "full" and "fuller" must be equivalent
+        assert_eq!(
+            file_paths_for_level("full",   true),
+            file_paths_for_level("fuller", true),
+        );
     }
 }

@@ -9,10 +9,10 @@ import {
   MinusCircle, ExternalLink, Copy, Settings,
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import { initNewProject, scaffoldFullProject, getSettings, checkGhCli } from '../lib/api';
-import type { ProjectInitRequest, ProjectInitResult, FullScaffoldResult } from '../lib/types';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
+import { initNewProject, scaffoldFullProject, scaffoldFromGithubTemplate, getSettings, checkGhCli } from '../../../lib/api';
+import type { ProjectInitRequest, ProjectInitResult, FullScaffoldResult } from '../../../lib/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ export interface NewProjectConfig {
   uiStyle: string;
   createGitRepo: boolean;
   createClaudeSkills: boolean;
+  templateMode: 'bare_bones' | 'standard' | 'fuller';
 }
 
 const DEFAULT_CONFIG: NewProjectConfig = {
@@ -42,6 +43,7 @@ const DEFAULT_CONFIG: NewProjectConfig = {
   uiStyle: '',
   createGitRepo: true,
   createClaudeSkills: true,
+  templateMode: 'standard',
 };
 
 type StepStatus = 'pending' | 'running' | 'done' | 'error';
@@ -70,18 +72,30 @@ function buildScratchProgressSteps(
   createGithub: boolean,
   createVercel: boolean,
   createSupabase: boolean,
+  useTemplate = false,
 ): ProgressStep[] {
   const steps: ProgressStep[] = [
-    { id: 'files',    label: 'Creating project files',    status: 'pending' },
-    { id: 'docs',     label: 'Generating markdown docs',  status: 'pending' },
+    {
+      id: 'files',
+      label: useTemplate ? 'Cloning from template' : 'Creating project files',
+      status: 'pending',
+    },
+    { id: 'docs', label: 'Generating markdown docs', status: 'pending' },
   ];
   if (createClaudeSkills) {
-    steps.push({ id: 'skills',  label: 'Generating Claude skills', status: 'pending' });
+    steps.push({ id: 'skills', label: 'Generating Claude skills', status: 'pending' });
   }
-  steps.push({ id: 'git', label: 'Initialising git repo', status: 'pending' });
-  if (createGithub)   steps.push({ id: 'github',   label: 'Creating GitHub repo',     status: 'pending' });
+  steps.push({
+    id: 'git',
+    label: useTemplate ? 'Committing and pushing' : 'Initialising git repo',
+    status: 'pending',
+  });
+  // Template flow: GitHub creation is implicit — no separate step
+  if (!useTemplate && createGithub) {
+    steps.push({ id: 'github', label: 'Creating GitHub repo', status: 'pending' });
+  }
   if (createVercel)   steps.push({ id: 'vercel',   label: 'Creating Vercel project',  status: 'pending' });
-  if (createSupabase) steps.push({ id: 'supabase', label: 'Creating Supabase project',status: 'pending' });
+  if (createSupabase) steps.push({ id: 'supabase', label: 'Creating Supabase project', status: 'pending' });
   steps.push({ id: 'database', label: 'Saving to database', status: 'pending' });
   return steps;
 }
@@ -138,20 +152,22 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
   const [doneResult, setDoneResult]   = useState<ProjectInitResult | null>(null);
 
   // Scratch-specific
-  const [projectsDir, setProjectsDir]     = useState('');
-  const [ghAvailable, setGhAvailable]     = useState<boolean | null>(null);
-  const [vercelToken, setVercelToken]     = useState('');
-  const [supabaseReady, setSupabaseReady] = useState(false);
-  const [scaffoldGithub, setScaffoldGithub]     = useState(true);
-  const [scaffoldVercel, setScaffoldVercel]     = useState(true);
-  const [scaffoldSupabase, setScaffoldSupabase] = useState(true);
-  const [fullResult, setFullResult]             = useState<FullScaffoldResult | null>(null);
+  const [projectsDir, setProjectsDir]             = useState('');
+  const [scaffoldTemplateRepo, setScaffoldTemplateRepo] = useState('');
+  const [ghAvailable, setGhAvailable]             = useState<boolean | null>(null);
+  const [vercelToken, setVercelToken]             = useState('');
+  const [supabaseReady, setSupabaseReady]         = useState(false);
+  const [scaffoldGithub, setScaffoldGithub]       = useState(true);
+  const [scaffoldVercel, setScaffoldVercel]       = useState(true);
+  const [scaffoldSupabase, setScaffoldSupabase]   = useState(true);
+  const [fullResult, setFullResult]               = useState<FullScaffoldResult | null>(null);
 
   // Load settings/gh status whenever the modal opens
   useEffect(() => {
     if (!open) return;
     getSettings().then((s) => {
       setProjectsDir(s.projects_dir ?? '');
+      setScaffoldTemplateRepo(s.scaffold_template_repo ?? '');
       setVercelToken(s.vercel_token ?? '');
       setSupabaseReady(!!(s.supabase_access_token && s.supabase_org_id));
     }).catch(() => {});
@@ -248,6 +264,7 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
         ui_style:             config.uiStyle,
         create_git_repo:      config.createGitRepo,
         create_claude_skills: config.createClaudeSkills,
+        template_mode:        config.templateMode,
       };
       const result = await initNewProject(req);
       setDoneResult(result);
@@ -263,11 +280,13 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
   // ── Scratch mode: full scaffold + docs/skills + DB in one go ───────────────
 
   async function handleCreateScratch() {
+    const usingTemplate = !!scaffoldTemplateRepo;
     const initialSteps = buildScratchProgressSteps(
       config.createClaudeSkills,
       scaffoldGithub,
       scaffoldVercel,
       scaffoldSupabase,
+      usingTemplate,
     );
     setProgress(initialSteps);
     setCreateError(null);
@@ -281,15 +300,26 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
     });
 
     try {
-      const result = await scaffoldFullProject({
-        projectName:        config.name,
-        description:        config.description,
-        mainGoal:           config.mainGoal,
-        createGithub:       scaffoldGithub,
-        createVercel:       scaffoldVercel,
-        createSupabase:     scaffoldSupabase,
-        createClaudeSkills: config.createClaudeSkills,
-      });
+      const result = usingTemplate
+        ? await scaffoldFromGithubTemplate({
+            projectName:        config.name,
+            description:        config.description,
+            mainGoal:           config.mainGoal,
+            createVercel:       scaffoldVercel,
+            createSupabase:     scaffoldSupabase,
+            createClaudeSkills: config.createClaudeSkills,
+            projectLevel:       config.templateMode,
+          })
+        : await scaffoldFullProject({
+            projectName:        config.name,
+            description:        config.description,
+            mainGoal:           config.mainGoal,
+            createGithub:       scaffoldGithub,
+            createVercel:       scaffoldVercel,
+            createSupabase:     scaffoldSupabase,
+            createClaudeSkills: config.createClaudeSkills,
+            projectLevel:       config.templateMode,
+          });
       setFullResult(result);
       setPhase('done');
     } catch (e) {
@@ -407,6 +437,7 @@ export function NewProjectWizard({ open, onClose, onCreated }: Props) {
           {formStep === 1 && (
             <StepCloud
               projectsDir={projectsDir}
+              scaffoldTemplateRepo={scaffoldTemplateRepo}
               ghAvailable={ghAvailable}
               vercelToken={vercelToken}
               supabaseReady={supabaseReady}
@@ -649,6 +680,8 @@ function StepScratchAbout({
           className={`${INPUT_CLS} resize-none`}
         />
       </div>
+      <LevelPicker value={config.templateMode} onChange={(v) => patch({ templateMode: v })} />
+
       <div className="px-3 py-2.5 rounded-lg bg-surface border border-border-subtle text-[11px] text-slate-500 leading-relaxed">
         Creates a <span className="text-slate-400">Next.js 15 + React 19 + TypeScript + Tailwind v4 + Supabase SSR</span> project
         with planning docs and Claude skills in your default projects directory.
@@ -660,13 +693,14 @@ function StepScratchAbout({
 // ── Step: Cloud services ────────────────────────────────────────────────────────
 
 function StepCloud({
-  projectsDir, ghAvailable, vercelToken, supabaseReady,
+  projectsDir, scaffoldTemplateRepo, ghAvailable, vercelToken, supabaseReady,
   scaffoldGithub, setScaffoldGithub,
   scaffoldVercel, setScaffoldVercel,
   scaffoldSupabase, setScaffoldSupabase,
   config, patch, onGoToSettings,
 }: {
   projectsDir: string;
+  scaffoldTemplateRepo: string;
   ghAvailable: boolean | null;
   vercelToken: string;
   supabaseReady: boolean;
@@ -677,10 +711,11 @@ function StepCloud({
   patch: (p: Partial<NewProjectConfig>) => void;
   onGoToSettings: () => void;
 }) {
+  const usingTemplate = !!scaffoldTemplateRepo;
   const missingCloud: string[] = [];
-  if (ghAvailable === false) missingCloud.push('GitHub (gh CLI not found or not authenticated)');
-  if (!vercelToken)           missingCloud.push('Vercel (no access token)');
-  if (!supabaseReady)         missingCloud.push('Supabase (token or org ID missing)');
+  if (!usingTemplate && ghAvailable === false) missingCloud.push('GitHub (gh CLI not found or not authenticated)');
+  if (!vercelToken)  missingCloud.push('Vercel (no access token)');
+  if (!supabaseReady) missingCloud.push('Supabase (token or org ID missing)');
 
   return (
     <div className="space-y-4">
@@ -690,7 +725,7 @@ function StepCloud({
           <AlertCircle size={13} className="text-yellow-400 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-yellow-300 font-medium">No projects directory set</p>
-            <p className="text-xs text-yellow-400/70 mt-0.5">
+            <p className="text-xs text-yellow-400 mt-0.5">
               Required before scaffolding. Set a default directory in Settings.
             </p>
           </div>
@@ -723,17 +758,24 @@ function StepCloud({
       <div>
         <FieldLabel>Cloud services <OptionalTag /></FieldLabel>
         <div className="space-y-2">
-          <CloudOption
-            icon={<Github size={13} />}
-            label="Create GitHub repo"
-            description={
-              ghAvailable === null ? 'checking gh CLI…' :
-              ghAvailable ? 'gh CLI ready' : 'gh CLI not found or not authenticated'
-            }
-            available={ghAvailable ?? false}
-            checked={scaffoldGithub}
-            onChange={setScaffoldGithub}
-          />
+          {usingTemplate ? (
+            <div className="flex items-center gap-2.5 p-2.5 rounded-lg border border-border-subtle text-xs text-slate-400">
+              <CheckCircle2 size={13} className="text-green-400 shrink-0" />
+              <span>GitHub repo created from <span className="font-mono text-slate-300">{scaffoldTemplateRepo}</span></span>
+            </div>
+          ) : (
+            <CloudOption
+              icon={<Github size={13} />}
+              label="Create GitHub repo"
+              description={
+                ghAvailable === null ? 'checking gh CLI…' :
+                ghAvailable ? 'gh CLI ready' : 'gh CLI not found or not authenticated'
+              }
+              available={ghAvailable ?? false}
+              checked={scaffoldGithub}
+              onChange={setScaffoldGithub}
+            />
+          )}
           <CloudOption
             icon={<Triangle size={13} />}
             label="Create Vercel project"
@@ -801,6 +843,52 @@ function CloudOption({
         <span className={`text-xs ml-1.5 ${available ? 'text-slate-500' : 'text-slate-600'}`}>— {description}</span>
       </div>
     </label>
+  );
+}
+
+// ── Level picker ─────────────────────────────────────────────────────────────────
+
+const LEVEL_OPTIONS: {
+  value: 'bare_bones' | 'standard' | 'fuller';
+  label: string;
+  docs: string;
+  skills: string;
+}[] = [
+  { value: 'bare_bones', label: 'Bare-bones', docs: '5 docs',  skills: '2 skills' },
+  { value: 'standard',   label: 'Standard',   docs: '10 docs', skills: '6 skills' },
+  { value: 'fuller',     label: 'Fuller',      docs: '11 docs', skills: '7 skills' },
+];
+
+function LevelPicker({
+  value, onChange,
+}: {
+  value: 'bare_bones' | 'standard' | 'fuller';
+  onChange: (v: 'bare_bones' | 'standard' | 'fuller') => void;
+}) {
+  return (
+    <div>
+      <FieldLabel>Docs &amp; skills level</FieldLabel>
+      <div className="flex gap-2">
+        {LEVEL_OPTIONS.map((opt) => {
+          const active = value === opt.value;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => onChange(opt.value)}
+              className={[
+                'flex-1 flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg border text-center transition-colors cursor-default',
+                active
+                  ? 'border-violet-500/60 bg-violet-500/10 text-slate-100'
+                  : 'border-border text-slate-400 hover:border-border-subtle hover:text-slate-300',
+              ].join(' ')}
+            >
+              <span className="text-xs font-medium">{opt.label}</span>
+              <span className="text-[10px] opacity-70">{opt.docs} · {opt.skills}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -955,6 +1043,8 @@ function StepOptions({
           className={INPUT_CLS}
         />
       </div>
+
+      <LevelPicker value={config.templateMode} onChange={(v) => patch({ templateMode: v })} />
 
       <div className="space-y-0 border border-border rounded-lg overflow-hidden">
         <ToggleRow

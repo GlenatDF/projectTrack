@@ -1,7 +1,7 @@
 import { CheckCircle2, XCircle, MinusCircle, Loader2, ExternalLink, Copy } from 'lucide-react';
-import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
-import type { ScaffoldResult } from '../lib/types';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
+import type { ScaffoldResult } from '../../../lib/types';
 
 interface Props {
   open: boolean;

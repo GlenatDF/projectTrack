@@ -10,10 +10,10 @@ import {
   assembleAuditPrompt,
   runAuditWithClaudeCli,
   storeAuditResult,
-} from '../../lib/api';
-import type { AssembledPrompt, AuditDepth, AuditKind, AuditStoredResult } from '../../lib/types';
-import { Button } from '../ui/Button';
-import { Modal } from '../ui/Modal';
+} from '../../../../lib/api';
+import type { AssembledPrompt, AuditDepth, AuditKind, AuditStoredResult } from '../../../../lib/types';
+import { Button } from '../../../../components/ui/Button';
+import { Modal } from '../../../../components/ui/Modal';
 
 type Step =
   | 'assembling'

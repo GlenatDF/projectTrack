@@ -11,9 +11,9 @@ import {
   resetClaudeSession,
   runClaudeHere,
   updateSessionNotes,
-} from '../lib/api';
-import type { Project } from '../lib/types';
-import { Button } from './ui/Button';
+} from '../../../lib/api';
+import type { Project } from '../../../lib/types';
+import { Button } from '../../../components/ui/Button';
 
 interface Props {
   project: Project;

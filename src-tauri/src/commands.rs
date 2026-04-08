@@ -101,6 +101,16 @@ pub fn delete_project(id: i64, state: State<'_, AppState>) -> Result<(), String>
     db::delete_project_record(&conn, id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn archive_github_repo(id: i64, state: State<'_, AppState>) -> Result<String, String> {
+    let conn = db_conn!(state);
+    let project = db::fetch_project(&conn, id).map_err(|e: rusqlite::Error| e.to_string())?;
+    if project.local_repo_path.trim().is_empty() {
+        return Err("Project has no local repo path configured".to_string());
+    }
+    scaffold::archive_github_repo(&project.local_repo_path, &augmented_path())
+}
+
 // ── Git scanning ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -233,6 +243,65 @@ pub fn open_in_vscode(path: String) -> Result<(), String> {
     }
 
     Err("No supported editor found (tried VS Code, Cursor, Windsurf, Zed, BBEdit). Install one and try again.".to_string())
+}
+
+// ── Project file read ─────────────────────────────────────────────────────────
+
+/// Read up to 5 000 bytes from a file inside the project's repo root.
+/// Returns distinct error strings so the frontend can classify the result:
+///   "not_found"   — path does not exist
+///   "unsafe_path" — resolved path escapes the project root
+///   "not_a_file"  — path points to a directory
+/// All other errors are passed through as-is.
+#[tauri::command]
+pub fn read_project_file(repo_path: String, relative_path: String) -> Result<String, String> {
+    use std::io::Read;
+
+    // Reject obviously empty inputs up-front.
+    if repo_path.trim().is_empty() {
+        return Err("not_found".to_string());
+    }
+
+    let root = std::fs::canonicalize(&repo_path)
+        .map_err(|_| "not_found".to_string())?;
+
+    // Normalise the requested path:
+    // - if it looks absolute, try stripping the repo root prefix so it becomes relative
+    // - otherwise join directly
+    let rel = {
+        let rp = std::path::Path::new(&relative_path);
+        if rp.is_absolute() {
+            match rp.strip_prefix(&root) {
+                Ok(stripped) => stripped.to_path_buf(),
+                // absolute path that doesn't share our root → reject
+                Err(_) => return Err("unsafe_path".to_string()),
+            }
+        } else {
+            rp.to_path_buf()
+        }
+    };
+
+    let full = root.join(&rel);
+
+    // Canonicalize collapses any "../" sequences.
+    let resolved = std::fs::canonicalize(&full)
+        .map_err(|_| "not_found".to_string())?;
+
+    // Safety: resolved path must stay inside the project root.
+    if !resolved.starts_with(&root) {
+        return Err("unsafe_path".to_string());
+    }
+
+    let meta = std::fs::metadata(&resolved).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not_a_file".to_string());
+    }
+
+    let f = std::fs::File::open(&resolved).map_err(|e| e.to_string())?;
+    let mut buf = Vec::with_capacity(5001);
+    f.take(5000).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 // ── Repo discovery ────────────────────────────────────────────────────────────
@@ -1141,7 +1210,7 @@ pub fn update_setting(
     value: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let allowed = ["projects_dir", "vercel_token", "supabase_access_token", "supabase_org_id"];
+    let allowed = ["projects_dir", "vercel_token", "supabase_access_token", "supabase_org_id", "scaffold_template_repo"];
     if !allowed.contains(&key.as_str()) {
         return Err(format!("Unknown setting key: {key}"));
     }
@@ -1220,6 +1289,8 @@ pub fn scaffold_full_project(
     create_vercel: bool,
     create_supabase: bool,
     create_claude_skills: bool,
+    project_level: String, // "bare_bones" | "standard" | "fuller"
+
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<FullScaffoldResult, String> {
@@ -1289,6 +1360,7 @@ pub fn scaffold_full_project(
         ui_style:             String::new(),
         create_git_repo:      false,
         create_claude_skills,
+        template_mode:        project_level.clone(),
     };
     let doc_files = project_init::write_docs_and_skills(&project_dir, &init_req, &app, claude_md_template)?;
     files_created.extend(doc_files);
@@ -1350,6 +1422,228 @@ pub fn scaffold_full_project(
         supabase_id = id;
         supabase_pass = pass;
         scaffold_steps.push(step);
+    }
+
+    // 7. Save to DB
+    project_init::emit_progress(&app, "database", "Saving to database", "running");
+    let goal_note = if main_goal.trim().is_empty() {
+        String::new()
+    } else {
+        format!("Goal: {}", main_goal)
+    };
+    let create = CreateProject {
+        name:                  project_name.clone(),
+        description:           description.clone(),
+        local_repo_path:       project_path.clone(),
+        status:                "active".to_string(),
+        phase:                 "planning".to_string(),
+        priority:              "medium".to_string(),
+        ai_tool:               "claude".to_string(),
+        current_task:          String::new(),
+        next_task:             String::new(),
+        blocker:               String::new(),
+        notes:                 goal_note,
+        claude_startup_prompt: String::new(),
+        claude_prompt_mode:    "append".to_string(),
+        claude_priority_files: String::new(),
+        session_handoff_notes: String::new(),
+        startup_command:       String::new(),
+        preferred_terminal:    String::new(),
+    };
+    let project = {
+        let conn = db_conn!(state);
+        db::insert_project(&conn, create).map_err(|e| {
+            project_init::emit_progress(&app, "database", "Saving to database", "error");
+            e.to_string()
+        })?
+    };
+    project_init::emit_progress(&app, "database", "Saving to database", "done");
+
+    Ok(FullScaffoldResult {
+        project_id:           project.id,
+        project_path,
+        files_created,
+        github_url,
+        vercel_project_url:   vercel_url,
+        supabase_project_id:  supabase_id,
+        supabase_db_password: supabase_pass,
+        scaffold_steps,
+    })
+}
+
+// ── Scaffold from GitHub template ─────────────────────────────────────────────
+
+/// Create a new project by cloning from a GitHub template repo, then applying
+/// per-project customisation (token substitution + docs/skills), committing,
+/// and pushing.  Vercel and Supabase provisioning are optional extras.
+///
+/// Requires `scaffold_template_repo` to be set in Settings (e.g. "org/repo").
+/// The new GitHub repo is created under the same owner as the template repo.
+#[tauri::command]
+pub fn scaffold_from_github_template(
+    project_name: String,
+    description: String,
+    main_goal: String,
+    create_vercel: bool,
+    create_supabase: bool,
+    create_claude_skills: bool,
+    project_level: String, // "bare_bones" | "standard" | "fuller"
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<FullScaffoldResult, String> {
+    let (projects_dir, template_repo, vercel_token, supabase_token, supabase_org_id, claude_md_template) = {
+        let conn = db_conn!(state);
+        (
+            db::get_setting(&conn, "projects_dir").map_err(|e| e.to_string())?,
+            db::get_setting(&conn, "scaffold_template_repo").map_err(|e| e.to_string())?,
+            db::get_setting(&conn, "vercel_token").map_err(|e| e.to_string())?,
+            db::get_setting(&conn, "supabase_access_token").map_err(|e| e.to_string())?,
+            db::get_setting(&conn, "supabase_org_id").map_err(|e| e.to_string())?,
+            db::get_setting(&conn, "claude_md_template").ok().filter(|s| !s.trim().is_empty()),
+        )
+    };
+
+    if projects_dir.is_empty() {
+        return Err("No default projects directory configured. Set one in Settings.".to_string());
+    }
+    if template_repo.is_empty() {
+        return Err("No template repository configured. Set one in Settings.".to_string());
+    }
+
+    let path_env = augmented_path();
+    let slug = scaffold::to_slug(&project_name);
+    if slug.is_empty() {
+        return Err("Project name produces an empty slug".to_string());
+    }
+    let expanded_base = projects_dir.replace('~', &std::env::var("HOME").unwrap_or_default());
+    let projects_path = std::path::Path::new(&expanded_base);
+    let project_dir  = projects_path.join(&slug);
+    let project_path = project_dir.to_string_lossy().to_string();
+
+    // Derive new repo owner from the template repo (e.g. "org/template" → "org/slug")
+    let new_repo_name = match template_repo.split_once('/') {
+        Some((owner, _)) => format!("{}/{}", owner, slug),
+        None             => slug.clone(),
+    };
+
+    let mut scaffold_steps: Vec<scaffold::ScaffoldStep> = Vec::new();
+    let mut files_created: Vec<String> = Vec::new();
+    let github_url: Option<String>;
+    let mut vercel_url: Option<String> = None;
+    let mut supabase_id: Option<String> = None;
+    let mut supabase_pass: Option<String> = None;
+
+    // 1. Clone from template (creates GitHub repo + local clone in one step)
+    project_init::emit_progress(&app, "files", "Cloning from template", "running");
+    let clone_out = std::process::Command::new("gh")
+        .args([
+            "repo", "create", &new_repo_name,
+            "--template", &template_repo,
+            "--private",
+            "--clone",
+        ])
+        .current_dir(projects_path)
+        .env("PATH", &path_env)
+        .output();
+
+    match clone_out {
+        Err(e) => {
+            project_init::emit_progress(&app, "files", "Cloning from template", "error");
+            return Err(format!("gh CLI not found: {e}"));
+        }
+        Ok(o) if !o.status.success() => {
+            project_init::emit_progress(&app, "files", "Cloning from template", "error");
+            return Err(String::from_utf8_lossy(&o.stderr).into_owned());
+        }
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout).into_owned();
+            github_url = stdout.lines()
+                .find(|l| l.contains("github.com"))
+                .map(|l| l.trim().to_string());
+            let detail = github_url.clone().unwrap_or_else(|| new_repo_name.clone());
+            project_init::emit_progress(&app, "files", "Cloning from template", "done");
+            scaffold_steps.push(scaffold::ScaffoldStep {
+                label:  "Cloned from template".to_string(),
+                status: "ok".to_string(),
+                detail: Some(detail),
+            });
+        }
+    }
+
+    // 2. Substitute project tokens in the 4 token-bearing template files
+    if let Err(e) = scaffold::apply_project_customization(&project_dir, &project_name, &slug, &description) {
+        return Err(format!("Token substitution failed: {e}"));
+    }
+    scaffold_steps.push(scaffold::ScaffoldStep {
+        label:  "Applied project customisation".to_string(),
+        status: "ok".to_string(),
+        detail: None,
+    });
+
+    // 3. Write markdown docs + Claude skills
+    let init_req = ProjectInitRequest {
+        name:                 project_name.clone(),
+        description:          description.clone(),
+        project_type:         "web_app".to_string(),
+        main_goal:            main_goal.clone(),
+        starter_template:     "next-supabase".to_string(),
+        add_ons:              vec![],
+        constraints:          String::new(),
+        coding_style:         String::new(),
+        ui_style:             String::new(),
+        create_git_repo:      false,
+        create_claude_skills,
+        template_mode:        project_level,
+    };
+    let doc_files = project_init::write_docs_and_skills(&project_dir, &init_req, &app, claude_md_template)?;
+    files_created.extend(doc_files);
+
+    // 4. Commit customisations and push to the newly created GitHub repo
+    project_init::emit_progress(&app, "git", "Committing and pushing", "running");
+    let git_step = scaffold::commit_and_push(&project_dir, &path_env);
+    let git_ok   = git_step.status == "ok";
+    project_init::emit_progress(
+        &app, "git", "Committing and pushing",
+        if git_ok { "done" } else { "error" },
+    );
+    scaffold_steps.push(git_step);
+
+    // 5. Vercel
+    if create_vercel {
+        project_init::emit_progress(&app, "vercel", "Creating Vercel project", "running");
+        if vercel_token.is_empty() {
+            project_init::emit_progress(&app, "vercel", "Creating Vercel project", "error");
+            scaffold_steps.push(scaffold::ScaffoldStep {
+                label: "Vercel project".to_string(), status: "skipped".to_string(),
+                detail: Some("no token in Settings".to_string()),
+            });
+        } else {
+            let (step, url) = scaffold::create_vercel_project(&project_name, &slug, &vercel_token);
+            let ok = step.status == "ok";
+            project_init::emit_progress(&app, "vercel", "Creating Vercel project", if ok { "done" } else { "error" });
+            vercel_url = url;
+            scaffold_steps.push(step);
+        }
+    }
+
+    // 6. Supabase
+    if create_supabase {
+        project_init::emit_progress(&app, "supabase", "Creating Supabase project", "running");
+        if supabase_token.is_empty() || supabase_org_id.is_empty() {
+            project_init::emit_progress(&app, "supabase", "Creating Supabase project", "error");
+            scaffold_steps.push(scaffold::ScaffoldStep {
+                label: "Supabase project".to_string(), status: "skipped".to_string(),
+                detail: Some("token or org ID missing in Settings".to_string()),
+            });
+        } else {
+            let (step, id, pass) =
+                scaffold::create_supabase_project(&project_name, &slug, &supabase_org_id, &supabase_token);
+            let ok = step.status == "ok";
+            project_init::emit_progress(&app, "supabase", "Creating Supabase project", if ok { "done" } else { "error" });
+            supabase_id = id;
+            supabase_pass = pass;
+            scaffold_steps.push(step);
+        }
     }
 
     // 7. Save to DB

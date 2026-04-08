@@ -137,6 +137,15 @@ export default function Settings() {
               saving={savingKey === 'projects_dir'}
             />
 
+            <SettingField
+              label="GitHub template repo"
+              hint="Used when creating new projects from template (e.g. org/launchpad-base-template). Leave blank to use local file generation."
+              value={settings.scaffold_template_repo ?? ''}
+              placeholder="org/repo-name"
+              onSave={(v) => saveSetting('scaffold_template_repo', v)}
+              saving={savingKey === 'scaffold_template_repo'}
+            />
+
             {/* GitHub */}
             <div>
               <div className="flex items-center justify-between mb-1">

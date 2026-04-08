@@ -7,7 +7,7 @@ import {
   XCircle,
   ListTodo,
 } from 'lucide-react';
-import { createTaskFromFinding, getAuditDetail, updateFindingStatus } from '../../lib/api';
+import { createTaskFromFinding, getAuditDetail, updateFindingStatus } from '../../../../lib/api';
 import type {
   AuditDepth,
   AuditFinding,
@@ -15,7 +15,7 @@ import type {
   AuditWithFindings,
   FindingSeverity,
   FindingStatus,
-} from '../../lib/types';
+} from '../../../../lib/types';
 
 
 const KIND_LABELS: Record<AuditKind, string> = {

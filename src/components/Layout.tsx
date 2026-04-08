@@ -46,10 +46,10 @@ export function Layout() {
               Version {update.version} is available
             </span>
             {update.released && (
-              <span className="text-violet-400/70">· {update.released}</span>
+              <span className="text-violet-400">· {update.released}</span>
             )}
             {update.notes && (
-              <span className="text-violet-300/60 truncate">— {update.notes}</span>
+              <span className="text-violet-400 truncate">— {update.notes}</span>
             )}
             <div className="flex items-center gap-3 ml-auto shrink-0">
               <button

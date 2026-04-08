@@ -341,6 +341,39 @@ jobs:
       - uses: actions/dependency-review-action@v4
 "#;
 
+/// Substitute `{{name}}`, `{{slug}}`, and `{{description}}` tokens in the four
+/// files that carry per-project identity.  All other template files are static
+/// and will be copied verbatim from the GitHub template repo when that flow is
+/// wired up; only these four need touching after the clone.
+///
+/// This function works on any directory — a freshly cloned template repo or a
+/// locally-generated scaffold — making it the natural seam between the two flows.
+pub fn apply_project_customization(
+    dir: &Path,
+    name: &str,
+    slug: &str,
+    desc: &str,
+) -> Result<(), String> {
+    patch_file(dir, "package.json",   name, slug, desc)?;
+    patch_file(dir, "README.md",      name, slug, desc)?;
+    patch_file(dir, "app/layout.tsx", name, slug, desc)?;
+    patch_file(dir, "app/page.tsx",   name, slug, desc)?;
+    Ok(())
+}
+
+/// Read a file, replace all three tokens, write it back.
+fn patch_file(dir: &Path, rel: &str, name: &str, slug: &str, desc: &str) -> Result<(), String> {
+    let path = dir.join(rel);
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read {rel}: {e}"))?;
+    let patched = content
+        .replace("{{name}}", name)
+        .replace("{{slug}}", slug)
+        .replace("{{description}}", desc);
+    std::fs::write(&path, patched)
+        .map_err(|e| format!("write {rel}: {e}"))
+}
+
 fn readme_template(name: &str, description: &str, slug: &str) -> String {
     format!(
         r#"# {name}
@@ -395,13 +428,6 @@ fn write_file(dir: &Path, rel_path: &str, content: &str) -> Result<(), String> {
         .map_err(|e| format!("write {rel_path}: {e}"))
 }
 
-fn apply(template: &str, name: &str, slug: &str, desc: &str) -> String {
-    template
-        .replace("{{name}}", name)
-        .replace("{{slug}}", slug)
-        .replace("{{description}}", desc)
-}
-
 pub fn create_local_files(
     project_dir: &Path,
     name: &str,
@@ -411,27 +437,31 @@ pub fn create_local_files(
     std::fs::create_dir_all(project_dir)
         .map_err(|e| format!("create project dir: {e}"))?;
 
-    let a = |t: &str| apply(t, name, slug, desc);
+    // ── Template-owned (static — identical for every project) ──────────────
+    write_file(project_dir, ".npmrc",                       TMPL_NPMRC)?;
+    write_file(project_dir, "tsconfig.json",                TMPL_TSCONFIG)?;
+    write_file(project_dir, "next.config.ts",               TMPL_NEXT_CONFIG)?;
+    write_file(project_dir, "postcss.config.mjs",           TMPL_POSTCSS)?;
+    write_file(project_dir, "middleware.ts",                 TMPL_MIDDLEWARE)?;
+    write_file(project_dir, ".env.example",                  TMPL_ENV_EXAMPLE)?;
+    write_file(project_dir, ".env.local",                    TMPL_ENV_LOCAL)?;
+    write_file(project_dir, ".gitignore",                    TMPL_GITIGNORE)?;
+    write_file(project_dir, "app/globals.css",               TMPL_GLOBALS_CSS)?;
+    write_file(project_dir, "lib/supabase/client.ts",        TMPL_SUPABASE_CLIENT)?;
+    write_file(project_dir, "lib/supabase/server.ts",        TMPL_SUPABASE_SERVER)?;
+    write_file(project_dir, "lib/supabase/middleware.ts",    TMPL_SUPABASE_MIDDLEWARE)?;
+    write_file(project_dir, "components/.gitkeep",           "")?;
+    write_file(project_dir, "public/.gitkeep",               "")?;
+    write_file(project_dir, ".github/workflows/ci.yml",      TMPL_CI_WORKFLOW)?;
 
-    write_file(project_dir, "package.json",          &a(TMPL_PACKAGE_JSON))?;
-    write_file(project_dir, ".npmrc",                 &a(TMPL_NPMRC))?;
-    write_file(project_dir, "tsconfig.json",          &a(TMPL_TSCONFIG))?;
-    write_file(project_dir, "next.config.ts",         &a(TMPL_NEXT_CONFIG))?;
-    write_file(project_dir, "postcss.config.mjs",     &a(TMPL_POSTCSS))?;
-    write_file(project_dir, "middleware.ts",           &a(TMPL_MIDDLEWARE))?;
-    write_file(project_dir, ".env.example",            &a(TMPL_ENV_EXAMPLE))?;
-    write_file(project_dir, ".env.local",              &a(TMPL_ENV_LOCAL))?;
-    write_file(project_dir, ".gitignore",              &a(TMPL_GITIGNORE))?;
-    write_file(project_dir, "README.md",               &readme_template(name, desc, slug))?;
-    write_file(project_dir, "app/globals.css",         &a(TMPL_GLOBALS_CSS))?;
-    write_file(project_dir, "app/layout.tsx",          &a(TMPL_LAYOUT))?;
-    write_file(project_dir, "app/page.tsx",            &a(TMPL_PAGE))?;
-    write_file(project_dir, "lib/supabase/client.ts",  &a(TMPL_SUPABASE_CLIENT))?;
-    write_file(project_dir, "lib/supabase/server.ts",  &a(TMPL_SUPABASE_SERVER))?;
-    write_file(project_dir, "lib/supabase/middleware.ts", &a(TMPL_SUPABASE_MIDDLEWARE))?;
-    write_file(project_dir, "components/.gitkeep",    "")?;
-    write_file(project_dir, "public/.gitkeep",        "")?;
-    write_file(project_dir, ".github/workflows/ci.yml", &a(TMPL_CI_WORKFLOW))?;
+    // ── Template-owned (project tokens — substituted after clone) ──────────
+    // Write the raw token-bearing templates first, then substitute in place.
+    write_file(project_dir, "package.json",   TMPL_PACKAGE_JSON)?;
+    write_file(project_dir, "README.md",      &readme_template("{{name}}", "{{description}}", "{{slug}}"))?;
+    write_file(project_dir, "app/layout.tsx", TMPL_LAYOUT)?;
+    write_file(project_dir, "app/page.tsx",   TMPL_PAGE)?;
+    apply_project_customization(project_dir, name, slug, desc)?;
+
     Ok(())
 }
 
@@ -466,6 +496,42 @@ pub fn run_git_init(project_dir: &Path, path_env: &str) -> ScaffoldStep {
         return ScaffoldStep::err("git init (commit)", e);
     }
     ScaffoldStep::ok("git init + initial commit")
+}
+
+// ── Commit and push (template flow) ──────────────────────────────────────────
+
+/// Stage all changes and commit + push to origin.
+/// Used in the GitHub-template flow where the repo is already initialised
+/// (cloned from template) and just needs the Launchpad customisations committed.
+pub fn commit_and_push(project_dir: &Path, path_env: &str) -> ScaffoldStep {
+    let run = |args: &[&str]| -> Result<(), String> {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(project_dir)
+            .env("PATH", path_env)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).into_owned())
+        }
+    };
+
+    if let Err(e) = run(&["add", "-A"]) {
+        return ScaffoldStep::err("commit customisations (add)", e);
+    }
+    if let Err(e) = run(&[
+        "-c", "user.email=scaffold@launchpad",
+        "-c", "user.name=Launchpad",
+        "commit", "-m", "Launchpad customisation",
+    ]) {
+        return ScaffoldStep::err("commit customisations (commit)", e);
+    }
+    if let Err(e) = run(&["push"]) {
+        return ScaffoldStep::err("commit customisations (push)", e);
+    }
+    ScaffoldStep::ok("Committed and pushed customisations")
 }
 
 // ── GitHub repo creation ──────────────────────────────────────────────────────
@@ -595,6 +661,103 @@ pub fn create_supabase_project(
             )
         }
     }
+}
+
+// ── GitHub repo archiving ─────────────────────────────────────────────────────
+
+/// Renames the GitHub repo associated with `local_repo_path` to
+/// `{repo}-archived-{YYYY-MM}` and marks it as archived on GitHub.
+/// Returns the final `owner/new-name` string on success.
+pub fn archive_github_repo(local_repo_path: &str, path_env: &str) -> Result<String, String> {
+    let path = Path::new(local_repo_path);
+    if !path.exists() {
+        return Err(format!("Local repo path does not exist: {local_repo_path}"));
+    }
+
+    // Read git remote URL
+    let remote_out = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(path)
+        .env("PATH", path_env)
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+
+    if !remote_out.status.success() {
+        return Err("No git remote 'origin' found for this project".to_string());
+    }
+
+    let remote_url = String::from_utf8_lossy(&remote_out.stdout).trim().to_string();
+    let owner_repo = parse_github_owner_repo(&remote_url)
+        .ok_or_else(|| format!("Could not parse GitHub owner/repo from remote: {remote_url}"))?;
+
+    let parts: Vec<&str> = owner_repo.splitn(2, '/').collect();
+    if parts.len() != 2 {
+        return Err(format!("Unexpected owner/repo format: {owner_repo}"));
+    }
+    let owner    = parts[0];
+    let repo     = parts[1];
+    let new_name = format!("{repo}-archived-{}", year_month());
+
+    // Step 1: rename
+    let rename_out = Command::new("gh")
+        .args(["api", &format!("repos/{owner}/{repo}"),
+               "-X", "PATCH", "-F", &format!("name={new_name}")])
+        .env("PATH", path_env)
+        .output()
+        .map_err(|e| format!("Failed to run gh: {e}"))?;
+
+    if !rename_out.status.success() {
+        let stderr = String::from_utf8_lossy(&rename_out.stderr).into_owned();
+        return Err(format!("Failed to rename repo: {stderr}"));
+    }
+
+    // Step 2: archive
+    let archive_out = Command::new("gh")
+        .args(["api", &format!("repos/{owner}/{new_name}"),
+               "-X", "PATCH", "-F", "archived=true"])
+        .env("PATH", path_env)
+        .output()
+        .map_err(|e| format!("Failed to run gh: {e}"))?;
+
+    if !archive_out.status.success() {
+        let stderr = String::from_utf8_lossy(&archive_out.stderr).into_owned();
+        return Err(format!("Renamed to {new_name} but archive failed: {stderr}"));
+    }
+
+    Ok(format!("{owner}/{new_name}"))
+}
+
+fn parse_github_owner_repo(url: &str) -> Option<String> {
+    // https://github.com/owner/repo.git  or  https://github.com/owner/repo
+    if let Some(rest) = url.strip_prefix("https://github.com/") {
+        let s = rest.trim_end_matches('/').trim_end_matches(".git");
+        if s.contains('/') { return Some(s.to_string()); }
+    }
+    // git@github.com:owner/repo.git
+    if let Some(rest) = url.strip_prefix("git@github.com:") {
+        let s = rest.trim_end_matches(".git");
+        if s.contains('/') { return Some(s.to_string()); }
+    }
+    None
+}
+
+fn year_month() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = secs / 86400;
+    let z   = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y   = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp  = (5 * doy + 2) / 153;
+    let m   = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y   = if m <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}", y, m)
 }
 
 // ── Check gh CLI ──────────────────────────────────────────────────────────────

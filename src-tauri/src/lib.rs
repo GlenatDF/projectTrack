@@ -76,6 +76,7 @@ pub fn run() {
             commands::update_project_status,
             commands::relink_repo_path,
             commands::delete_project,
+            commands::archive_github_repo,
             commands::scan_project,
             commands::get_project_scans,
             commands::get_latest_scans,
@@ -127,6 +128,7 @@ pub fn run() {
             // Project init
             commands::init_new_project,
             commands::scaffold_full_project,
+            commands::scaffold_from_github_template,
             // Audits
             commands::assemble_audit_prompt,
             commands::run_audit_with_claude_cli,
@@ -140,6 +142,8 @@ pub fn run() {
             commands::fetch_skill_content,
             commands::get_installed_skills,
             commands::install_skill,
+            // Project file read
+            commands::read_project_file,
             // Update check
             commands::check_for_update,
             commands::publish_current_version,

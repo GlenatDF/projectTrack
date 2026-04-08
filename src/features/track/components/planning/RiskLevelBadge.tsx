@@ -1,5 +1,5 @@
-import type { RiskLevel } from '../../lib/types';
-import { RISK_LEVEL_COLORS } from '../../lib/types';
+import type { RiskLevel } from '../../../../lib/types';
+import { RISK_LEVEL_COLORS } from '../../../../lib/types';
 
 interface Props {
   level: RiskLevel;

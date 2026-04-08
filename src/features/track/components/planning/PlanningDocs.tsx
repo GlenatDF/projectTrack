@@ -5,12 +5,12 @@ import {
   updateProjectDocument,
   updateDocumentStatus,
   regenerateScaffold,
-} from '../../lib/api';
-import type { ProjectDocument, DocStatus } from '../../lib/types';
-import { DOC_TYPE_LABELS } from '../../lib/types';
-import { Button } from '../ui/Button';
-import { EmptyState } from '../ui/EmptyState';
-import { SectionLabel } from '../ui/SectionLabel';
+} from '../../../../lib/api';
+import type { ProjectDocument, DocStatus } from '../../../../lib/types';
+import { DOC_TYPE_LABELS } from '../../../../lib/types';
+import { Button } from '../../../../components/ui/Button';
+import { EmptyState } from '../../../../components/ui/EmptyState';
+import { SectionLabel } from '../../../../components/ui/SectionLabel';
 
 const PLAN_MANAGED_DOCS = new Set(['risks', 'scratchpad']);
 

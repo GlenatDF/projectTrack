@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
-import { getProjectPlan, updateTaskStatus, updatePhaseStatus, updateTaskProgressNote } from '../../lib/api';
-import type { ProjectPhase, ProjectTask, ProjectPlan, TaskStatus, PhaseStatus } from '../../lib/types';
+import { getProjectPlan, updateTaskStatus, updatePhaseStatus, updateTaskProgressNote } from '../../../../lib/api';
+import type { ProjectPhase, ProjectTask, ProjectPlan, TaskStatus, PhaseStatus } from '../../../../lib/types';
 import { CategoryBadge } from './CategoryBadge';
-import { Button } from '../ui/Button';
-import { EmptyState } from '../ui/EmptyState';
-import { SectionLabel } from '../ui/SectionLabel';
+import { Button } from '../../../../components/ui/Button';
+import { EmptyState } from '../../../../components/ui/EmptyState';
+import { SectionLabel } from '../../../../components/ui/SectionLabel';
 
 interface Props {
   projectId: number;

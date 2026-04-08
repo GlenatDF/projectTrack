@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ClipboardList, Loader2, Plus } from 'lucide-react';
-import { getProjectAudits } from '../../lib/api';
-import type { AuditDepth, AuditKind, AuditRecord } from '../../lib/types';
-import { Button } from '../ui/Button';
-import { EmptyState } from '../ui/EmptyState';
+import { getProjectAudits } from '../../../../lib/api';
+import type { AuditDepth, AuditKind, AuditRecord } from '../../../../lib/types';
+import { Button } from '../../../../components/ui/Button';
+import { EmptyState } from '../../../../components/ui/EmptyState';
 import { AuditModal } from './AuditModal';
 import { AuditDetail } from './AuditDetail';
 

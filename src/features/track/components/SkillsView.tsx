@@ -1,14 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Search, CheckCircle2, Download, Loader2, AlertCircle, X } from 'lucide-react';
-import type { Project, SkillEntry } from '../lib/types';
+import type { Project, SkillEntry } from '../../../lib/types';
 import {
   fetchSkillsIndex,
   fetchSkillContent,
   getInstalledSkills,
   installSkill,
-} from '../lib/api';
-import { Button } from './ui/Button';
-import { SectionLabel } from './ui/SectionLabel';
+} from '../../../lib/api';
+import { Button } from '../../../components/ui/Button';
+import { SectionLabel } from '../../../components/ui/SectionLabel';
 
 // ── Category display helpers ───────────────────────────────────────────────────
 

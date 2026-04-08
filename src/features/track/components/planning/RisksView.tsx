@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { getProjectPlan } from '../../lib/api';
-import type { ProjectPlan } from '../../lib/types';
+import { getProjectPlan } from '../../../../lib/api';
+import type { ProjectPlan } from '../../../../lib/types';
 import { RiskLevelBadge } from './RiskLevelBadge';
-import { EmptyState } from '../ui/EmptyState';
-import { SectionLabel } from '../ui/SectionLabel';
+import { EmptyState } from '../../../../components/ui/EmptyState';
+import { SectionLabel } from '../../../../components/ui/SectionLabel';
 
 interface Props {
   projectId: number;

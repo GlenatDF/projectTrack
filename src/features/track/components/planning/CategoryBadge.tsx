@@ -1,5 +1,5 @@
-import type { TaskCategory } from '../../lib/types';
-import { TASK_CATEGORY_COLORS } from '../../lib/types';
+import type { TaskCategory } from '../../../../lib/types';
+import { TASK_CATEGORY_COLORS } from '../../../../lib/types';
 
 interface Props {
   category: TaskCategory;
